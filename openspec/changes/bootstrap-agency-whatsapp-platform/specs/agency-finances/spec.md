@@ -105,6 +105,30 @@ Any staff member of the agency MUST be able to open a session with an opening ca
 - WHEN a $3.000 payment by Mercado Pago is recorded
 - THEN the Mercado Pago balance increases by $3.000 and the expected cash does not change
 
+### Requirement: Cash Sheet ("Caja diaria")
+
+The session MUST read like the paper "Caja diaria". Left column: opening cash ("cambio inicial"), physical products by quantity × price, cash brought into the business ("ingreso"), machine sales from the terminal report ("venta") and fiado payments in cash. Right column: prizes paid (raspaditas, quiniela, others), withdrawals ("retiros"), expenses ("gastos") and customer transfers, each recorded on the account it landed in. "Deuda de caja" is what was sold on credit (fiado) during the shift. Expected cash ("efectivo", what stays in the drawer at close) MUST be left − right − deuda de caja. The machine sales MUST be loaded before closing (it may be $0). Closing MUST record the shift's cash sales (sales − transfers − fiados) as one sale movement on the cash payment method, plus the difference adjustment; reopening cancels both.
+
+#### Scenario: Close a shift
+
+- GIVEN opening cash $10.000, 4 raspaditas of $500, machine sales $50.000, $5.000 ingreso and a $1.000 fiado paid in cash
+- AND $7.000 quiniela prizes, $1.000 raspadita prizes, $1.500 expenses, a $20.000 withdrawal and an $8.000 transfer to Mercado Pago
+- AND $3.000 sold on credit
+- WHEN the sheet is shown
+- THEN left is $68.000, right is $37.500 and expected cash is $27.500
+- AND closing records a $41.000 cash sale
+
+### Requirement: Fiados (Customer Credit)
+
+An agency MUST be able to keep credit accounts for its customers: name, optional cellphone (linked to the WhatsApp customer when the agency knows it) and notes. An account belongs to one agency; the same person in another agency is another account. Any staff member MUST be able to record a charge ("se le fió") or a payment; payments MUST enter a payment method (cash or the account the customer transferred to). Both MUST belong to the open cash session if there is one. The balance owed MUST be calculated (charges − payments); entries MUST be voided, never deleted, and MUST NOT be voided once their session is closed.
+
+#### Scenario: Fiado in the shift
+
+- GIVEN the morning session is open
+- WHEN $3.000 is charged to a customer and they later pay $1.000 in cash
+- THEN the customer owes $2.000
+- AND the session's deuda de caja is $3.000 and its cash includes the $1.000 payment
+
 ### Requirement: Daily Lotería Settlement Ticket
 
 Every day the Lotería terminal prints a settlement ticket with a due date ("VTO"), a net amount, whether it will be debited from or credited to the agency's savings account, the account number, and the print date and time. The owner or an agency admin MUST be able to load it once per agency and issue date, with an optional photo stored privately. Loading it MUST create one movement in the agency's bank account dated on the due date (Lotería debit or credit); editing it MUST update that movement and voiding it MUST void the movement. If the account number differs from the agency's bank account, the system MUST warn before saving. Until the due date, it MUST be shown as an upcoming debit or credit.

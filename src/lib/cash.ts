@@ -1,12 +1,23 @@
-// Cash sessions ("cajas") per agency, date and shift (spec: agency-finances).
-// A day uses either a single shift or morning + afternoon, never both. Movements recorded
-// in a session go to their payment method (cash, bank transfer, Mercado Pago…), so balances
-// stay up to date. Expected cash = opening + cash in − cash out; on close, a non-zero
-// difference is recorded as a cash adjustment linked to the session; an opening cash that
-// differs from the "Efectivo" balance is recorded as an opening adjustment, so the cash
-// balance always equals the physical cash.
+// Cash sessions ("cajas") per agency, date and shift, mirroring the paper "Caja diaria"
+// (spec: agency-finances). A day uses either a single shift or morning + afternoon.
+//
+//   Left column (what the drawer should hold)    Right column (what left the drawer)
+//   cambio inicial                               aciertos raspaditas / quiniela / otros
+//   physical products (quantity × price)         retiros
+//   ingreso de efectivo                          gastos
+//   venta (machine report)                       transferencias (sales paid to an account)
+//   cobros de fiado en efectivo
+//
+//   Efectivo esperado = left − right − deuda de caja (fiados of the shift).
+//
+// Lines are movements on the agency's payment methods, so balances stay current: cash lines
+// go to "Efectivo", transfers to the account they landed in. Sales are only known at close:
+// closing records the shift's cash sales as one SALE movement, and the difference between
+// the counted cash ("Efectivo") and the expected one as an adjustment. An opening cash that
+// differs from the "Efectivo" balance is recorded as an opening adjustment.
 import { Prisma } from "@/generated/prisma/client";
 import type { CashShift, MovementKind } from "@/generated/prisma/enums";
+import { agencyCatalog } from "@/lib/catalog";
 import { FinanceValidationError, addMovement, agencyBalances, parseMoney, voidMovement } from "@/lib/finance";
 import { prisma } from "@/lib/prisma";
 import { dateValue } from "@/lib/schedule";
@@ -20,17 +31,36 @@ export const SHIFT_LABEL: Record<CashShift, string> = {
   SINGLE: "Turno único",
 };
 
-/** Kinds that can be recorded at the counter. */
-export const CASH_KINDS = ["CUSTOMER_PAYMENT", "PRIZE_PAYOUT", "EXPENSE", "OTHER"] as const;
-export type CashKind = (typeof CASH_KINDS)[number];
-const CLOSE_ADJUSTMENT_REF = "cierre-de-caja";
-const OPEN_ADJUSTMENT_REF = "apertura-de-caja";
+const REF = {
+  open: "apertura-de-caja",
+  close: "cierre-de-caja",
+  sale: "venta-del-turno",
+  prizeScratch: "acierto-raspaditas",
+  prizeQuiniela: "acierto-quiniela",
+} as const;
+
+/** Lines that can be loaded during the shift, as on the sheet. */
+export const SHEET_LINES = {
+  CASH_IN: { label: "Ingreso de efectivo", kind: "CASH_IN", direction: "IN", reference: null },
+  PRIZE_SCRATCH: { label: "Acierto raspaditas", kind: "PRIZE_PAYOUT", direction: "OUT", reference: REF.prizeScratch },
+  PRIZE_QUINIELA: { label: "Acierto quiniela", kind: "PRIZE_PAYOUT", direction: "OUT", reference: REF.prizeQuiniela },
+  PRIZE_OTHER: { label: "Otros aciertos", kind: "PRIZE_PAYOUT", direction: "OUT", reference: null },
+  WITHDRAWAL: { label: "Retiro", kind: "WITHDRAWAL", direction: "OUT", reference: null },
+  EXPENSE: { label: "Gasto", kind: "EXPENSE", direction: "OUT", reference: null },
+  TRANSFER: { label: "Transferencia", kind: "CUSTOMER_PAYMENT", direction: "IN", reference: null },
+} as const satisfies Record<string, { label: string; kind: MovementKind; direction: "IN" | "OUT"; reference: string | null }>;
+export type SheetLine = keyof typeof SHEET_LINES;
+export const isSheetLine = (v: string): v is SheetLine => v in SHEET_LINES;
 
 function parseCash(raw: string | number, label: string) {
   const value = parseMoney(raw);
   if (value.isNaN() || value.isNegative()) throw new FinanceValidationError(`${label}: un monto de $0 o más.`);
   if (value.decimalPlaces() > 2) throw new FinanceValidationError(`${label}: hasta 2 decimales.`);
   return value;
+}
+
+async function cashFundOf(agencyId: string) {
+  return prisma.agencyFund.findFirst({ where: { agencyId, kind: "CASH", active: true }, orderBy: { sortOrder: "asc" } });
 }
 
 // ─── Opening ───────────────────────────────────────────────────
@@ -48,7 +78,7 @@ export async function suggestShift(agencyId: string, date: string): Promise<Cash
   return null;
 }
 
-/** Suggested opening cash: what was counted when the previous session closed. */
+/** Suggested opening cash ("cambio inicial"): the cash counted when the previous session closed. */
 export async function suggestedOpeningCash(agencyId: string) {
   const last = await prisma.cashSession.findMany({
     where: { agencyId, status: "CLOSED", countedCash: { not: null } },
@@ -56,6 +86,11 @@ export async function suggestedOpeningCash(agencyId: string) {
     take: 1,
   });
   return last[0]?.countedCash ?? ZERO;
+}
+
+/** The agency's open session, if any (only one at a time). */
+export function openSessionOf(agencyId: string) {
+  return prisma.cashSession.findFirst({ where: { agencyId, status: "OPEN" } });
 }
 
 export async function openSession(input: {
@@ -74,19 +109,14 @@ export async function openSession(input: {
     throw new FinanceValidationError("Ese día ya se trabaja con turnos mañana/tarde: no se puede abrir turno único.");
   if (input.shift !== "SINGLE" && shifts.has("SINGLE"))
     throw new FinanceValidationError("Ese día ya tiene una caja de turno único.");
-  const open = await prisma.cashSession.findFirst({ where: { agencyId: input.agencyId, status: "OPEN" } });
-  if (open) throw new FinanceValidationError("Hay una caja abierta: cerrala antes de abrir otra.");
-  const openingCash = parseCash(input.openingCash, "Efectivo inicial");
+  if (await openSessionOf(input.agencyId)) throw new FinanceValidationError("Hay una caja abierta: cerrala antes de abrir otra.");
+  const openingCash = parseCash(input.openingCash, "Cambio inicial");
   const session = await prisma.cashSession.create({
     data: { agencyId: input.agencyId, date, shift: input.shift, openingCash, openedById: input.userId ?? null },
   });
 
-  // Keep the cash balance equal to the physical cash: if the opening cash differs from
-  // the "Efectivo" balance, record the gap as an opening adjustment of this session.
-  const cashFund = await prisma.agencyFund.findFirst({
-    where: { agencyId: input.agencyId, kind: "CASH", active: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // Keep the cash balance equal to the physical cash.
+  const cashFund = await cashFundOf(input.agencyId);
   if (cashFund) {
     const { funds } = await agencyBalances(input.agencyId, input.date);
     const balance = funds.find((f) => f.fund.id === cashFund.id)?.balance ?? ZERO;
@@ -100,7 +130,7 @@ export async function openSession(input: {
           amount: gap.abs(),
           kind: "ADJUSTMENT",
           description: `Ajuste de apertura de caja (${SHIFT_LABEL[input.shift].toLowerCase()})`,
-          reference: OPEN_ADJUSTMENT_REF,
+          reference: REF.open,
           source: "CASH_CLOSING",
           cashSessionId: session.id,
           createdById: input.userId ?? null,
@@ -110,41 +140,45 @@ export async function openSession(input: {
   return session;
 }
 
-// ─── Movements and summary ─────────────────────────────────────
+// ─── Lines during the shift ────────────────────────────────────
 
-async function openSessionOrFail(sessionId: string) {
+export async function openSessionOrFail(sessionId: string) {
   const session = await prisma.cashSession.findUniqueOrThrow({ where: { id: sessionId } });
   if (session.status !== "OPEN") throw new FinanceValidationError("La caja está cerrada.");
   return session;
 }
 
-const DIRECTION: Record<CashKind, "IN" | "OUT"> = {
-  CUSTOMER_PAYMENT: "IN",
-  PRIZE_PAYOUT: "OUT",
-  EXPENSE: "OUT",
-  OTHER: "IN",
-};
-
-export async function addSessionMovement(input: {
+/** A line of the sheet. Cash lines go to "Efectivo"; a transfer goes to the account it landed in. */
+export async function addSheetLine(input: {
   sessionId: string;
-  fundId: string;
-  kind: CashKind;
+  line: SheetLine;
   amount: string | number;
-  direction?: "IN" | "OUT"; // only for OTHER
+  fundId?: string | null; // transfers only
   description?: string | null;
   userId?: string | null;
 }) {
   const session = await openSessionOrFail(input.sessionId);
-  const fund = await prisma.agencyFund.findUnique({ where: { id: input.fundId } });
-  if (!fund || fund.agencyId !== session.agencyId) throw new FinanceValidationError("Elegí un medio de esta agencia.");
-  if (!CASH_KINDS.includes(input.kind)) throw new FinanceValidationError("Tipo de movimiento inválido para la caja.");
+  const def = SHEET_LINES[input.line];
+  if (!def) throw new FinanceValidationError("Tipo de línea inválido.");
+  let fundId: string;
+  if (input.line === "TRANSFER") {
+    const fund = input.fundId ? await prisma.agencyFund.findUnique({ where: { id: input.fundId } }) : null;
+    if (!fund || fund.agencyId !== session.agencyId || fund.kind === "CASH" || !fund.active)
+      throw new FinanceValidationError("Elegí la cuenta donde entró la transferencia.");
+    fundId = fund.id;
+  } else {
+    const cash = await cashFundOf(session.agencyId);
+    if (!cash) throw new FinanceValidationError("La agencia no tiene un medio de efectivo activo.");
+    fundId = cash.id;
+  }
   return addMovement({
-    fundId: fund.id,
+    fundId,
     date: session.date.toISOString().slice(0, 10),
-    direction: input.kind === "OTHER" ? (input.direction ?? "IN") : DIRECTION[input.kind],
+    direction: def.direction,
     amount: input.amount,
-    kind: input.kind as Exclude<MovementKind, "TRANSFER">,
+    kind: def.kind,
     description: input.description,
+    reference: def.reference,
     createdById: input.userId,
     cashSessionId: session.id,
     source: "CASH_CLOSING",
@@ -152,50 +186,138 @@ export async function addSessionMovement(input: {
 }
 
 export async function voidSessionMovement(movementId: string) {
-  const m = await prisma.fundMovement.findUniqueOrThrow({ where: { id: movementId } });
+  const m = await prisma.fundMovement.findUniqueOrThrow({ where: { id: movementId }, include: { creditEntry: true } });
   if (!m.cashSessionId) throw new FinanceValidationError("Ese movimiento no es de una caja.");
+  if (m.creditEntry) throw new FinanceValidationError("Es un pago de fiado: anulalo desde la cuenta del cliente.");
   await openSessionOrFail(m.cashSessionId);
   await voidMovement(movementId, "Anulado en la caja");
 }
 
-const isCloseAdjustment = (m: { kind: MovementKind; reference: string | null }) =>
-  m.kind === "ADJUSTMENT" && m.reference === CLOSE_ADJUSTMENT_REF;
-/** Opening/closing adjustments align the cash balance; they are not part of the shift's activity. */
-const isSessionAdjustment = (m: { kind: MovementKind; reference: string | null }) =>
-  m.kind === "ADJUSTMENT" && (m.reference === CLOSE_ADJUSTMENT_REF || m.reference === OPEN_ADJUSTMENT_REF);
+/** Physical products counted in the shift (quantity 0 removes the line). Price is today's. */
+export async function setSessionItems(sessionId: string, quantities: Record<string, number>) {
+  const session = await openSessionOrFail(sessionId);
+  const { games, products } = await agencyCatalog(session.agencyId, session.date.toISOString().slice(0, 10));
+  const physical = [
+    ...games.filter((g) => g.saleMode === "PHYSICAL").map((g) => ({ key: `g:${g.id}`, gameId: g.id, ownerProductId: null, name: g.name, price: g.price.amount })),
+    ...products
+      .filter((p) => p.saleMode === "PHYSICAL")
+      .map((p) => ({ key: `p:${p.id}`, gameId: null, ownerProductId: p.id, name: p.name, price: p.unitPrice.amount })),
+  ];
+  for (const [key, raw] of Object.entries(quantities)) {
+    const item = physical.find((p) => p.key === key);
+    if (!item) throw new FinanceValidationError("Ese producto no se vende por unidad en esta agencia.");
+    if (!Number.isInteger(raw) || raw < 0 || raw > 100_000) throw new FinanceValidationError(`${item.name}: una cantidad entera.`);
+  }
+  await prisma.$transaction(async (tx) => {
+    for (const item of physical) {
+      if (!(item.key in quantities)) continue;
+      const quantity = quantities[item.key];
+      const where = item.gameId
+        ? { sessionId_gameId: { sessionId, gameId: item.gameId } }
+        : { sessionId_ownerProductId: { sessionId, ownerProductId: item.ownerProductId! } };
+      if (quantity === 0) {
+        await tx.cashSessionItem.deleteMany({ where: { sessionId, gameId: item.gameId, ownerProductId: item.ownerProductId } });
+        continue;
+      }
+      await tx.cashSessionItem.upsert({
+        where,
+        create: { sessionId, gameId: item.gameId, ownerProductId: item.ownerProductId, name: item.name, quantity, unitPrice: item.price },
+        update: { quantity, name: item.name, unitPrice: item.price },
+      });
+    }
+  });
+  return physical;
+}
 
-/** Totals of a session: per payment method, prizes, expenses, expected cash and difference. */
-export async function sessionSummary(sessionId: string) {
+/** "Venta": what the terminal report says was sold in the shift (machine products). */
+export async function setMachineSales(sessionId: string, amount: string | number) {
+  await openSessionOrFail(sessionId);
+  await prisma.cashSession.update({ where: { id: sessionId }, data: { machineSales: parseCash(amount, "Venta de la máquina") } });
+}
+
+// ─── The sheet ─────────────────────────────────────────────────
+
+const isSessionAdjustment = (m: { kind: MovementKind; reference: string | null }) =>
+  m.kind === "ADJUSTMENT" && (m.reference === REF.close || m.reference === REF.open);
+const sum = <T>(rows: T[], f: (r: T) => Prisma.Decimal) => rows.reduce((a, r) => a.add(f(r)), ZERO);
+
+/** The session as the paper sheet: left column, right column, fiados and expected cash. */
+export async function sessionSheet(sessionId: string) {
   const session = await prisma.cashSession.findUniqueOrThrow({
     where: { id: sessionId },
     include: {
-      movements: { include: { fund: { select: { id: true, name: true, kind: true } } }, orderBy: { createdAt: "asc" } },
+      movements: {
+        include: { fund: { select: { id: true, name: true, kind: true } }, creditEntry: { include: { account: { select: { name: true } } } } },
+        orderBy: { createdAt: "asc" },
+      },
+      items: { orderBy: { name: "asc" } },
+      creditEntries: { where: { kind: "CHARGE" }, include: { account: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } },
       openedBy: { select: { name: true } },
       closedBy: { select: { name: true } },
     },
   });
-  const live = session.movements.filter((m) => !m.voidedAt && !isSessionAdjustment(m));
-  const signed = (m: (typeof live)[number]) => (m.direction === "IN" ? m.amount : m.amount.neg());
+  // Activity of the shift: no voided lines, no balance adjustments, no sale (computed below).
+  const live = session.movements.filter((m) => !m.voidedAt && !isSessionAdjustment(m) && m.kind !== "SALE");
+  const cash = live.filter((m) => m.fund.kind === "CASH");
+  const ofLine = (line: SheetLine) => {
+    const def = SHEET_LINES[line];
+    return live.filter(
+      (m) => m.kind === def.kind && !m.creditEntry && (line === "TRANSFER" ? m.fund.kind !== "CASH" : m.fund.kind === "CASH") &&
+        (def.reference ? m.reference === def.reference : line !== "PRIZE_OTHER" || (m.reference !== REF.prizeScratch && m.reference !== REF.prizeQuiniela)),
+    );
+  };
+  const total = (rows: { amount: Prisma.Decimal }[]) => sum(rows, (r) => r.amount);
 
-  const byFund = new Map<string, { name: string; kind: string; collected: Prisma.Decimal; net: Prisma.Decimal }>();
-  for (const m of live) {
-    const row = byFund.get(m.fund.id) ?? { name: m.fund.name, kind: m.fund.kind, collected: ZERO, net: ZERO };
-    if (m.kind === "CUSTOMER_PAYMENT") row.collected = row.collected.add(m.amount);
-    row.net = row.net.add(signed(m));
-    byFund.set(m.fund.id, row);
+  const items = session.items.map((i) => ({ ...i, total: i.unitPrice.mul(i.quantity) }));
+  const itemsTotal = sum(items, (i) => i.total);
+  const machineSales = session.machineSales ?? ZERO;
+  const cashIn = total(ofLine("CASH_IN"));
+  const creditPaymentsCash = total(cash.filter((m) => m.creditEntry));
+  const otherCashIn = total(cash.filter((m) => m.direction === "IN" && m.kind === "OTHER"));
+
+  const prizesScratch = total(ofLine("PRIZE_SCRATCH"));
+  const prizesQuiniela = total(ofLine("PRIZE_QUINIELA"));
+  const prizesOther = total(ofLine("PRIZE_OTHER"));
+  const withdrawals = total(ofLine("WITHDRAWAL"));
+  const expenses = total(ofLine("EXPENSE"));
+  const transfersRows = ofLine("TRANSFER");
+  const transfers = total(transfersRows);
+  const otherCashOut = total(cash.filter((m) => m.direction === "OUT" && m.kind === "OTHER"));
+  const byAccount = new Map<string, { name: string; total: Prisma.Decimal }>();
+  for (const m of transfersRows) {
+    const row = byAccount.get(m.fund.id) ?? { name: m.fund.name, total: ZERO };
+    row.total = row.total.add(m.amount);
+    byAccount.set(m.fund.id, row);
   }
-  const sumKind = (k: MovementKind) => live.filter((m) => m.kind === k).reduce((a, m) => a.add(m.amount), ZERO);
-  const cashNet = live.filter((m) => m.fund.kind === "CASH").reduce((a, m) => a.add(signed(m)), ZERO);
-  const expectedCash = session.openingCash.add(cashNet);
+  const creditCharges = session.creditEntries.filter((e) => !e.voidedAt);
+  const debt = total(creditCharges);
+
+  const sales = itemsTotal.add(machineSales);
+  // What the shift's sales left in cash: the rest was paid by transfer or fiado.
+  const cashSales = sales.sub(transfers).sub(debt);
+  const leftTotal = session.openingCash.add(itemsTotal).add(cashIn).add(machineSales).add(creditPaymentsCash).add(otherCashIn);
+  const rightTotal = prizesScratch.add(prizesQuiniela).add(prizesOther).add(withdrawals).add(expenses).add(transfers).add(otherCashOut);
+  const expectedCash = leftTotal.sub(rightTotal).sub(debt);
   const difference = session.countedCash ? session.countedCash.sub(expectedCash) : null;
 
   return {
     session,
     movements: session.movements,
-    byFund: [...byFund.values()],
-    collected: sumKind("CUSTOMER_PAYMENT"),
-    prizes: sumKind("PRIZE_PAYOUT"),
-    expenses: sumKind("EXPENSE"),
+    left: { openingCash: session.openingCash, items, itemsTotal, cashIn, machineSales, creditPaymentsCash, otherCashIn, total: leftTotal },
+    right: {
+      prizesScratch,
+      prizesQuiniela,
+      prizesOther,
+      withdrawals,
+      expenses,
+      transfers,
+      transfersByAccount: [...byAccount.values()],
+      otherCashOut,
+      total: rightTotal,
+    },
+    credit: { charges: creditCharges, debt },
+    sales,
+    cashSales,
     expectedCash,
     difference,
   };
@@ -205,55 +327,57 @@ export async function sessionSummary(sessionId: string) {
 
 export async function closeSession(input: { sessionId: string; countedCash: string | number; userId?: string | null; notes?: string | null }) {
   const session = await openSessionOrFail(input.sessionId);
-  const counted = parseCash(input.countedCash, "Efectivo contado");
-  const { expectedCash } = await sessionSummary(session.id);
+  if (session.machineSales === null)
+    throw new FinanceValidationError("Cargá la venta del reporte de la máquina antes de cerrar (puede ser $0).");
+  const counted = parseCash(input.countedCash, "Efectivo");
+  const { expectedCash, cashSales } = await sessionSheet(session.id);
   const difference = counted.sub(expectedCash);
+  const cashFund = await cashFundOf(session.agencyId);
+  if (!cashFund) throw new FinanceValidationError("La agencia no tiene un medio de efectivo activo.");
+  const common = { fundId: cashFund.id, date: session.date, source: "CASH_CLOSING" as const, cashSessionId: session.id, createdById: input.userId ?? null };
+  const label = SHIFT_LABEL[session.shift].toLowerCase();
 
-  if (!difference.isZero()) {
-    const cashFund = await prisma.agencyFund.findFirst({
-      where: { agencyId: session.agencyId, kind: "CASH", active: true },
-      orderBy: { sortOrder: "asc" },
+  await prisma.$transaction(async (tx) => {
+    if (!cashSales.isZero())
+      await tx.fundMovement.create({
+        data: {
+          ...common,
+          direction: cashSales.isNegative() ? "OUT" : "IN",
+          amount: cashSales.abs(),
+          kind: "SALE",
+          description: `Venta en efectivo (${label})`,
+          reference: REF.sale,
+        },
+      });
+    if (!difference.isZero())
+      await tx.fundMovement.create({
+        data: {
+          ...common,
+          direction: difference.isNegative() ? "OUT" : "IN",
+          amount: difference.abs(),
+          kind: "ADJUSTMENT",
+          description: `Diferencia de caja (${label})`,
+          reference: REF.close,
+        },
+      });
+    await tx.cashSession.update({
+      where: { id: session.id },
+      data: { status: "CLOSED", countedCash: counted, closedById: input.userId ?? null, closedAt: new Date(), notes: input.notes?.trim() || null },
     });
-    if (!cashFund) throw new FinanceValidationError("La agencia no tiene un medio de efectivo activo.");
-    await prisma.fundMovement.create({
-      data: {
-        fundId: cashFund.id,
-        date: session.date,
-        direction: difference.isNegative() ? "OUT" : "IN",
-        amount: difference.abs(),
-        kind: "ADJUSTMENT",
-        description: `Diferencia de caja (${SHIFT_LABEL[session.shift].toLowerCase()})`,
-        reference: CLOSE_ADJUSTMENT_REF,
-        source: "CASH_CLOSING",
-        cashSessionId: session.id,
-        createdById: input.userId ?? null,
-      },
-    });
-  }
-  await prisma.cashSession.update({
-    where: { id: session.id },
-    data: {
-      status: "CLOSED",
-      countedCash: counted,
-      closedById: input.userId ?? null,
-      closedAt: new Date(),
-      notes: input.notes?.trim() || null,
-    },
   });
   return { expectedCash, counted, difference };
 }
 
-/** Owners/admins: reopen a closed session; its close adjustment is voided. */
+/** Owners/admins: reopen a closed session; its sale and close adjustment are voided. */
 export async function reopenSession(sessionId: string) {
   const session = await prisma.cashSession.findUniqueOrThrow({ where: { id: sessionId }, include: { movements: true } });
   if (session.status === "OPEN") return;
-  const open = await prisma.cashSession.findFirst({ where: { agencyId: session.agencyId, status: "OPEN" } });
-  if (open) throw new FinanceValidationError("Hay otra caja abierta: cerrala antes de reabrir esta.");
-  for (const m of session.movements.filter((m) => !m.voidedAt && isCloseAdjustment(m))) await voidMovement(m.id, "Caja reabierta");
-  await prisma.cashSession.update({
-    where: { id: sessionId },
-    data: { status: "OPEN", countedCash: null, closedById: null, closedAt: null },
-  });
+  if (await openSessionOf(session.agencyId)) throw new FinanceValidationError("Hay otra caja abierta: cerrala antes de reabrir esta.");
+  const generated = session.movements.filter(
+    (m) => !m.voidedAt && ((m.kind === "ADJUSTMENT" && m.reference === REF.close) || (m.kind === "SALE" && m.reference === REF.sale)),
+  );
+  for (const m of generated) await voidMovement(m.id, "Caja reabierta");
+  await prisma.cashSession.update({ where: { id: sessionId }, data: { status: "OPEN", countedCash: null, closedById: null, closedAt: null } });
 }
 
 /** Sessions of an agency from a date, newest first. */
@@ -264,5 +388,4 @@ export function agencySessions(agencyId: string, fromDate: string) {
   });
 }
 
-export const sortByShift = <T extends { shift: CashShift }>(rows: T[]) =>
-  [...rows].sort((a, b) => SHIFT_ORDER[a.shift] - SHIFT_ORDER[b.shift]);
+export const sortByShift = <T extends { shift: CashShift }>(rows: T[]) => [...rows].sort((a, b) => SHIFT_ORDER[a.shift] - SHIFT_ORDER[b.shift]);

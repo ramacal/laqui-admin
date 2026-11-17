@@ -58,6 +58,7 @@ model GameDefinition {
   provinces  ProvinceGameAvailability[]
   agencies   AgencyGameAvailability[]
   orders     Order[]
+  cashItems  CashSessionItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -262,6 +263,7 @@ model Agency {
   ownerProducts      OwnerProductAgency[]
   funds              AgencyFund[]
   cashSessions       CashSession[]
+  creditAccounts     CreditAccount[]
   settlements        LotterySettlement[]
   // Cash sessions per day: 1 (single shift) or 2 (morning + afternoon). Suggests the shift.
   cashSessionsPerDay Int                      @default(2)
@@ -401,6 +403,7 @@ model User {
   cashOpened        CashSession[]       @relation("CashSessionOpenedBy")
   settlementsLoaded LotterySettlement[] @relation("SettlementCreatedBy")
   cashClosed        CashSession[]       @relation("CashSessionClosedBy")
+  creditEntries     CreditEntry[]       @relation("CreditEntryCreatedBy")
   sessions          Session[]
   accounts          Account[]
 
@@ -595,6 +598,7 @@ model Customer {
 
   agencies AgencyCustomer[]
   orders   Order[]
+  credits  CreditAccount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -795,6 +799,7 @@ model OwnerProduct {
   prices     OwnerProductPrice[]
   agencies   OwnerProductAgency[]
   orderItems OrderItem[]
+  cashItems  CashSessionItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -879,7 +884,10 @@ enum MovementDirection {
 enum MovementKind {
   LOTTERY_DEBIT // Lotería debita (lo recaudado)
   LOTTERY_CREDIT // Lotería acredita (premios, comisiones, devoluciones)
-  CUSTOMER_PAYMENT // cobro a un cliente
+  SALE // venta del turno cobrada en efectivo (generada al cerrar la caja)
+  CASH_IN // ingreso de efectivo al negocio
+  WITHDRAWAL // retiro de efectivo
+  CUSTOMER_PAYMENT // cobro a un cliente (transferencias, pagos de fiado)
   PRIZE_PAYOUT // pago de premio a un cliente
   EXPENSE // gasto
   TRANSFER // between two payment methods of the agency (see transferId)
@@ -913,6 +921,7 @@ model FundMovement {
   cashSessionId String?
   cashSession   CashSession?       @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
   settlement    LotterySettlement?
+  creditEntry   CreditEntry?
 
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -952,16 +961,93 @@ model CashSession {
   openedBy    User?    @relation("CashSessionOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
   openedAt    DateTime @default(now())
 
-  countedCash Decimal?  @db.Decimal(14, 2) // physical cash counted at close
+  // "Venta" of the sheet: what the terminal reports as sold in the shift (machine products)
+  machineSales Decimal? @db.Decimal(14, 2)
+
+  countedCash Decimal?  @db.Decimal(14, 2) // "Efectivo": physical cash left in the drawer at close
   closedById  String?
   closedBy    User?     @relation("CashSessionClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
   closedAt    DateTime?
   notes       String?   @db.Text
 
-  movements FundMovement[]
+  movements     FundMovement[]
+  items         CashSessionItem[]
+  creditEntries CreditEntry[]
 
   @@unique([agencyId, date, shift])
   @@index([agencyId, date])
+}
+
+// Physical products counted in a cash session (raspaditas, own products sold by unit).
+// Exactly one of gameId / ownerProductId; name and unit price are copied at the time.
+model CashSessionItem {
+  id             String          @id @default(cuid())
+  sessionId      String
+  session        CashSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  gameId         String?
+  game           GameDefinition? @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  ownerProductId String?
+  ownerProduct   OwnerProduct?   @relation(fields: [ownerProductId], references: [id], onDelete: SetNull)
+  name           String
+  quantity       Int
+  unitPrice      Decimal         @db.Decimal(12, 2)
+
+  @@unique([sessionId, gameId])
+  @@unique([sessionId, ownerProductId])
+}
+
+// ─── Fiados: customers who owe the agency (spec: agency-finances) ──
+
+// A credit account belongs to one agency: the same person in another agency is another account.
+// Optionally linked to the WhatsApp customer when the agency knows their cellphone.
+model CreditAccount {
+  id         String    @id @default(cuid())
+  agencyId   String
+  agency     Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  name       String
+  phone      String?
+  notes      String?   @db.Text
+  active     Boolean   @default(true)
+
+  entries CreditEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agencyId, name])
+}
+
+enum CreditEntryKind {
+  CHARGE // se le fió (sube la deuda)
+  PAYMENT // pagó (baja la deuda)
+}
+
+// Balance owed = charges − payments (not voided). Never stored, never deleted: voided.
+model CreditEntry {
+  id            String          @id @default(cuid())
+  accountId     String
+  account       CreditAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind          CreditEntryKind
+  amount        Decimal         @db.Decimal(14, 2) // always positive
+  date          DateTime        @db.Date
+  description   String?
+  // Charges made at the counter: the "Deuda de caja" of that session.
+  cashSessionId String?
+  cashSession   CashSession?    @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  // Payments: the money that came in (cash or a transfer to an account).
+  movementId    String?         @unique
+  movement      FundMovement?   @relation(fields: [movementId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User?     @relation("CreditEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  voidedAt    DateTime?
+  voidReason  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([accountId, date])
+  @@index([cashSessionId])
 }
 
 // ─── Daily Lotería settlement ticket (spec: agency-finances) ──────

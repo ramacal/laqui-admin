@@ -24,6 +24,9 @@ export const FUND_KIND_LABEL: Record<FundKind, string> = {
 export const MOVEMENT_KIND_LABEL: Record<MovementKind, string> = {
   LOTTERY_DEBIT: "Lotería debita",
   LOTTERY_CREDIT: "Lotería acredita",
+  SALE: "Venta del turno",
+  CASH_IN: "Ingreso de efectivo",
+  WITHDRAWAL: "Retiro",
   CUSTOMER_PAYMENT: "Cobro a cliente",
   PRIZE_PAYOUT: "Pago de premio",
   EXPENSE: "Gasto",
@@ -36,6 +39,9 @@ export const MOVEMENT_KIND_LABEL: Record<MovementKind, string> = {
 export const MOVEMENT_KIND_DIRECTION: Record<Exclude<MovementKind, "TRANSFER">, MovementDirection> = {
   LOTTERY_DEBIT: "OUT",
   LOTTERY_CREDIT: "IN",
+  SALE: "IN",
+  CASH_IN: "IN",
+  WITHDRAWAL: "OUT",
   CUSTOMER_PAYMENT: "IN",
   PRIZE_PAYOUT: "OUT",
   EXPENSE: "OUT",

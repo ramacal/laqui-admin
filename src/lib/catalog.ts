@@ -53,6 +53,7 @@ export async function agencyCatalog(agencyId: string, date?: string) {
       code: g.game.code,
       name: g.game.name,
       kind: g.game.kind,
+      saleMode: g.game.saleMode,
       price: g.current!, // Quiniela: minimum per bet line
       nextPrice: g.next,
     }));
@@ -76,6 +77,7 @@ export async function agencyCatalog(agencyId: string, date?: string) {
       id: p.product.id,
       name: p.product.name,
       description: p.product.description,
+      saleMode: p.product.saleMode,
       imageKey: p.product.imageKey,
       unitPrice: p.current!,
       nextPrice: p.next,

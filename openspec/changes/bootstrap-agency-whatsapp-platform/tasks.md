@@ -81,8 +81,9 @@
 - [x] 11.2 Movements (in/out, type, reference, origin), transfers between methods, voiding; calculated balances
 - [x] 11.3 Screens (validation scaffold): agency finances, owner totals in the panel
 - [x] 11.4 Daily Lotería settlement ticket (VTO, amount, debit/credit, account, photo) creating the bank movement on the due date
-- [ ] 11.5 Cash closings by employees as a movement source
+- [x] 11.5 Cash closings by employees as a movement source
 - [ ] 11.6 Attach receipts to movements (private storage)
 - [x] 11.7 Cash sessions per shift (morning/afternoon or single): open, record, close with difference adjustment, reopen; opening adjustment keeps cash balance = physical cash (logic only)
 - [x] 10.6 Machine vs physical products (saleMode); unit-sale kind for physical official products (Telekino, scratch cards)
-- [ ] 11.8 Cash closing screen matching the paper "Caja diaria" (physical products by quantity, machine "Venta", aciertos, retiro, gastos, transferencias, deuda de caja) — pending answers on Ingreso / Efectivo / Deuda de caja
+- [x] 11.8 Cash closing screen matching the paper "Caja diaria" (physical products by quantity, machine "Venta", ingreso, aciertos, retiros, gastos, transferencias per account, deuda de caja); raspaditas $500/$1000 as official physical products
+- [x] 11.9 Fiados: credit accounts per agency, charges and payments in the open session, calculated balance, screens

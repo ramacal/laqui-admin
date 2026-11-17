@@ -158,6 +158,16 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
         </span>
       </Link>
 
+      <Link href={`/panel/agencias/${agencyId}/caja`} className="card row link-card">
+        <div className="stack-xs">
+          <strong>Caja diaria</strong>
+          <span className="small muted">Abrir y cerrar el turno, aciertos, gastos, transferencias y fiados</span>
+        </div>
+        <span className="chevron" aria-hidden="true">
+          ›
+        </span>
+      </Link>
+
       {finances && (
         <Link href={`/panel/agencias/${agencyId}/finanzas`} className="card row link-card">
           <div className="stack-xs">
