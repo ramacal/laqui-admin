@@ -16,34 +16,34 @@ The system MUST maintain each supported game as a global definition independent 
 - WHEN an administrator queries supported games
 - THEN the system exposes `Quiniela`, `Quini 6`, and `Loto Plus`
 
-### Requirement: National Price with Validity
+### Requirement: Official Price with Validity
 
-Each base product (official game) MUST have a national price history. Each price MUST have a "valid from" date; the price in effect at a moment is the latest one whose "valid from" has arrived. Platform admins MUST be able to schedule a future price once for every province, and past prices MUST be kept. For Quiniela the amount is the minimum per bet line.
+Each base product (official game) MUST have an official price history. Each price MUST have a "valid from" date; the price in effect at a moment is the latest one whose "valid from" has arrived. Platform admins MUST be able to schedule a future price once for every province, and past prices MUST be kept. For Quiniela the amount is the minimum per bet line.
 
 #### Scenario: Scheduled price increase, once for the whole country
 
-- GIVEN Quini 6 costs $2500 nationally valid from 2026-01-01
-- AND a national price of $3000 valid from 2026-12-01 was scheduled
+- GIVEN Quini 6 costs $2500 officially valid from 2026-01-01
+- AND an official price of $3000 valid from 2026-12-01 was scheduled
 - WHEN the price is resolved in Buenos Aires or Santa Fe on 2026-11-30
 - THEN it is $2500
 - AND on 2026-12-01 it is $3000 in both
 
 ### Requirement: Province Price Override (copy on modify)
 
-A platform admin MUST be able to set a province's own price for a game. From then on that province uses its own price history and national changes no longer affect it. The price in effect at that moment MUST be kept as the province's starting price, so the game stays on sale until a scheduled own price starts. The admin MUST be able to return the province to the national price with one action.
+A platform admin MUST be able to set a province's own price for a game. From then on that province uses its own price history and changes to the official price no longer affect it. The official price in effect at that moment MUST be kept as the province's starting price, so the game stays on sale until a scheduled own price starts. The admin MUST be able to return the province to the official price with one action.
 
 #### Scenario: Province with its own Quiniela minimum
 
-- GIVEN Quiniela's national minimum is $100
+- GIVEN Quiniela's official minimum is $100
 - WHEN the admin sets Santa Fe's own minimum to $150 from today
 - THEN Santa Fe uses $150 and Buenos Aires keeps $100
-- AND a later national change to $120 does not change Santa Fe
+- AND a later official change to $120 does not change Santa Fe
 
-#### Scenario: Back to the national price
+#### Scenario: Back to the official price
 
 - GIVEN Santa Fe has its own Quiniela price
-- WHEN the admin chooses "volver al precio nacional"
-- THEN Santa Fe uses the national price again
+- WHEN the admin chooses "volver al precio oficial"
+- THEN Santa Fe uses the official price again
 
 #### Scenario: No price yet
 

@@ -85,7 +85,7 @@ export function NewGameForm({
 
       <div className="grid-2">
         <label className="field">
-          <span className="small muted">{kind === "QUINIELA" ? "Mínimo por renglón ($)" : "Precio nacional ($)"}</span>
+          <span className="small muted">{kind === "QUINIELA" ? "Mínimo por renglón ($)" : "Precio oficial ($)"}</span>
           <input name="amount" className="input" inputMode="decimal" placeholder="1500" required />
         </label>
         <label className="field">

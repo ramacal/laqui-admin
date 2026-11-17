@@ -139,7 +139,7 @@ export async function setProvinceGamePrice(
                 gameId,
                 amount: new Prisma.Decimal(current.amount),
                 validFrom: dateValue(current.validFrom),
-                note: "Copiado del precio nacional",
+                note: "Copiado del precio oficial",
               },
             }),
           ]

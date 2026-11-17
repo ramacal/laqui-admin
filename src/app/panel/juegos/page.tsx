@@ -54,8 +54,8 @@ export default async function GamesPage() {
       <div className="stack-xs">
         <h1>Juegos y precios</h1>
         <p className="muted small">
-          Cada juego tiene un precio nacional con fecha de vigencia. Una provincia puede tener precio propio: desde ahí
-          los cambios nacionales no la afectan, hasta que vuelva al precio nacional.
+          Cada juego tiene un precio oficial con fecha de vigencia. Una provincia puede tener precio propio: desde ahí
+          los cambios del precio oficial no la afectan, hasta que vuelva a usarlo.
         </p>
       </div>
 
@@ -88,7 +88,7 @@ export default async function GamesPage() {
               {!g.active && <p className="warn small">Pausado: no se ofrece en ninguna agencia.</p>}
 
               <div className="stack-xs">
-                <h3 className="small">Precio nacional</h3>
+                <h3 className="small">Precio oficial</h3>
                 <span className="small">
                   {national.current ? <strong>{money(national.current.amount)}</strong> : <span className="warn">sin precio</span>}
                   {unit}
@@ -106,7 +106,7 @@ export default async function GamesPage() {
                     <PriceForm
                       action={addGamePrice.bind(null, g.id)}
                       today={today}
-                      amountLabel={g.kind === "QUINIELA" ? "Mínimo por renglón" : "Precio nacional"}
+                      amountLabel={g.kind === "QUINIELA" ? "Mínimo por renglón" : "Precio oficial"}
                     />
                   </div>
                 </details>
@@ -137,7 +137,7 @@ export default async function GamesPage() {
               <div className="stack-xs">
                 <h3 className="small">Provincias con precio propio</h3>
                 {custom.length === 0 ? (
-                  <p className="muted small">Ninguna: todas usan el precio nacional.</p>
+                  <p className="muted small">Ninguna: todas usan el precio oficial.</p>
                 ) : (
                   <ul className="list plain">
                     {custom.map((pg) => {
@@ -152,7 +152,7 @@ export default async function GamesPage() {
                             </span>
                             <form action={resetProvincePrice.bind(null, pg.provinceId, g.id)}>
                               <button type="submit" className="btn btn-secondary btn-sm">
-                                Volver al nacional
+                                Volver al oficial
                               </button>
                             </form>
                           </div>

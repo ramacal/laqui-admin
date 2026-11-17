@@ -78,7 +78,7 @@ export async function addGamePrice(gameId: string, _prev: FormState, form: FormD
     await requirePlatformAdmin();
     const validFrom = str(form, "validFrom");
     await setGamePrice(gameId, str(form, "amount"), validFrom, str(form, "note") || undefined);
-    return validFrom > todayIn(TZ) ? `Aumento nacional programado desde ${validFrom}.` : "Precio nacional guardado.";
+    return validFrom > todayIn(TZ) ? `Aumento del precio oficial programado desde ${validFrom}.` : "Precio oficial guardado.";
   });
 }
 
