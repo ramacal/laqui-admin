@@ -120,6 +120,29 @@ export default async function PanelPage() {
           </Link>
         )}
 
+        {isPlatformAdmin && (
+          <>
+            <Link href="/panel/quiniela" className="card row link-card">
+              <div className="stack-xs">
+                <strong>Sorteos de Quiniela</strong>
+                <span className="muted small">Programa mensual de Lotería: qué sorteos y loterías hay cada día</span>
+              </div>
+              <span className="chevron" aria-hidden="true">
+                ›
+              </span>
+            </Link>
+            <Link href="/panel/tareas" className="card row link-card">
+              <div className="stack-xs">
+                <strong>Tareas programadas</strong>
+                <span className="muted small">Lo que corre solo: programa de Quiniela, feriados…</span>
+              </div>
+              <span className="chevron" aria-hidden="true">
+                ›
+              </span>
+            </Link>
+          </>
+        )}
+
         {memberships.some((m) => m.role === "OWNER") && (
           <>
             <Link href="/panel/horarios" className="card row link-card">

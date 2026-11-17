@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const storage = new URL(process.env.STORAGE_PUBLIC_URL ?? "http://localhost:8333/laqui-public");
 
 const nextConfig: NextConfig = {
+  // pdf.js reads the Quiniela program PDF on the server; load it from node_modules as is.
+  serverExternalPackages: ["pdfjs-dist"],
   experimental: {
     // Photos of Lotería tickets and receipts are uploaded through server actions.
     serverActions: { bodySizeLimit: "8mb" },

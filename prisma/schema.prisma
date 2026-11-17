@@ -115,13 +115,17 @@ model Province {
 }
 
 model ProvinceGameAvailability {
-  provinceId  String
-  province    Province       @relation(fields: [provinceId], references: [id], onDelete: Cascade)
-  gameId      String
-  game        GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  enabled     Boolean        @default(true)
+  provinceId    String
+  province      Province       @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  gameId        String
+  game          GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  enabled       Boolean        @default(true)
   // false: uses the national price (GamePrice). true: own price history (ProvinceGamePrice).
-  customPrice Boolean        @default(false)
+  customPrice   Boolean        @default(false)
+  // Draw games: maximum per bet (Quiniela: per lottery, "$5.000 por C/Lotería") and how many
+  // minutes before the draw the terminals stop taking bets (sets the draws' closeTime).
+  maxBetAmount  Decimal?       @db.Decimal(12, 2)
+  cutoffMinutes Int?
 
   prices ProvinceGamePrice[]
 
@@ -153,6 +157,7 @@ model Lottery {
 
   provinces   ProvinceLotteryAvailability[]
   orderSlices OrderQuinielaLottery[]
+  draws       ProvinceQuinielaDrawLottery[]
 }
 
 model ProvinceLotteryAvailability {
@@ -191,9 +196,12 @@ model ProvinceQuinielaMonthlyProgram {
   version    Int           @default(1)
   status     ProgramStatus @default(DRAFT)
 
-  sourceFileKey String? @db.VarChar(500) // uploaded PDF/source in storage
+  sourceFileKey String? @db.VarChar(500) // the official PDF, in private storage
+  sourceUrl     String? @db.VarChar(500) // where it was downloaded from
+  sourceHash    String? @db.VarChar(64) // sha256 of the PDF: a new version only when it changes
   rawParse      Json? // raw parser/LLM output, kept for audit
   draft         Json? // normalized draft reviewed by the admin before publishing
+  warnings      Json? // checks that failed (vs. the web schedule, sequences, weekdays…)
 
   publishedAt DateTime?
   days        ProvinceQuinielaProgramDay[]
@@ -206,11 +214,12 @@ model ProvinceQuinielaMonthlyProgram {
 }
 
 model ProvinceQuinielaProgramDay {
-  id        String                         @id @default(cuid())
-  programId String
-  program   ProvinceQuinielaMonthlyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
-  date      DateTime                       @db.Date
-  enabled   Boolean                        @default(true)
+  id          String                         @id @default(cuid())
+  programId   String
+  program     ProvinceQuinielaMonthlyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  date        DateTime                       @db.Date
+  enabled     Boolean                        @default(true)
+  prizeExpiry DateTime?                      @db.Date // "Caducidad": last day to claim prizes
 
   draws ProvinceQuinielaProgramDayDraw[]
 
@@ -226,9 +235,73 @@ model ProvinceQuinielaProgramDayDraw {
   closeTime DateTime?                  @db.Time(0) // betting cutoff, if published
   enabled   Boolean                    @default(true)
 
+  lotteries       ProvinceQuinielaDrawLottery[]
   orderSelections OrderQuinielaDraw[]
 
   @@unique([dayId, slot])
+}
+
+// Lotteries taking part in a draw that day, each with its official draw number
+// (e.g. Matutina 15:00 → Provincia, Ciudad, Córdoba, Santa Fe, Entre Ríos n.º 9040 and,
+// Monday to Friday, Montevideo n.º 4930).
+model ProvinceQuinielaDrawLottery {
+  drawId     String
+  draw       ProvinceQuinielaProgramDayDraw @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  lotteryId  String
+  lottery    Lottery                        @relation(fields: [lotteryId], references: [id], onDelete: Cascade)
+  drawNumber Int?
+
+  @@id([drawId, lotteryId])
+}
+
+// ─── Scheduled jobs (admin "Tareas programadas") ─────────────────
+// Background tasks run by the worker (scripts/worker.ts) on a cron schedule, or by hand.
+
+model ScheduledJob {
+  id          String  @id @default(cuid())
+  key         String  @unique // handler key in src/lib/jobs (e.g. "quiniela-program-B")
+  name        String
+  description String? @db.Text
+  schedule    String // cron expression, Buenos Aires time (e.g. "0 8 * * *")
+  enabled     Boolean @default(true)
+
+  lastRunAt  DateTime?
+  lastStatus JobRunStatus?
+  nextRunAt  DateTime?
+
+  runs JobRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum JobRunStatus {
+  RUNNING
+  OK
+  WARNING // finished, but something needs a look (e.g. a draft to review)
+  ERROR
+}
+
+enum JobTrigger {
+  SCHEDULE
+  MANUAL
+}
+
+model JobRun {
+  id            String       @id @default(cuid())
+  jobId         String
+  job           ScheduledJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  trigger       JobTrigger
+  status        JobRunStatus @default(RUNNING)
+  startedAt     DateTime     @default(now())
+  finishedAt    DateTime?
+  summary       String?      @db.Text // one line for the list ("Noviembre 2026: 25 días, 175 sorteos")
+  details       Json?
+  error         String?      @db.Text
+  triggeredById String?
+  triggeredBy   User?        @relation("JobRunTriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+
+  @@index([jobId, startedAt])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -403,6 +476,7 @@ model User {
   settlementsLoaded LotterySettlement[] @relation("SettlementCreatedBy")
   cashClosed        CashSession[]       @relation("CashSessionClosedBy")
   creditEntries     CreditEntry[]       @relation("CreditEntryCreatedBy")
+  jobRuns           JobRun[]            @relation("JobRunTriggeredBy")
   sessions          Session[]
   accounts          Account[]
 

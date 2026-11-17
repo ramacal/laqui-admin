@@ -87,3 +87,13 @@
 - [x] 10.6 Machine vs physical products (saleMode); unit-sale kind for physical official products (Telekino, scratch cards)
 - [x] 11.8 Cash closing screen matching the paper "Caja diaria" (physical products by quantity, machine "Venta", ingreso, aciertos, retiros, gastos, transferencias per account, deuda de caja); raspaditas $500/$700/$1000 as official physical products
 - [x] 11.9 Fiados on agency customers (person: name, last name, AR cellphone, DNI; alias per agency), charges and payments in the open session, calculated balance, screens
+
+## 12. Quiniela program and scheduled jobs
+
+- [x] 12.1 Lotteries per draw with official draw numbers; prize expiry per day; Ciudad (ex Nacional); Mendoza off in B; max per lottery and cutoff minutes as province rules
+- [x] 12.2 Positional reader of Lotería de la Provincia's monthly program PDF (pdf.js) with checks; web schedule reader and cross-check
+- [x] 12.3 Draft versions (only when the PDF changes), publish (bulk) and discard; draws of a date
+- [x] 12.4 Scheduled jobs: ScheduledJob/JobRun, runner with history and lock, worker (npm run worker), jobs: program import (B), holiday sync
+- [x] 12.5 Admin screens: Sorteos de Quiniela (today, programs, upload, rules), program detail, Tareas programadas
+- [ ] 12.6 Quiniela results (extractos) job
+- [ ] 12.7 Betting cutoff confirmed with agencies (minutes before each draw)

@@ -72,6 +72,9 @@ export const keys = {
     `${agencyFolder(agency)}/liquidaciones/${yearMonth(issueDate)}/${issueDate.toISOString().slice(0, 10)}-${fileId}.${ext}`,
   ticket: (agency: AgencyRef, orderId: string, fileId: string, ext: string, at = new Date()) =>
     `${agencyFolder(agency)}/boletas/${yearMonth(at)}/${orderId}/${fileId}.${ext}`,
+  // Official monthly Quiniela program of a province (private: kept as the source of a draft).
+  quinielaProgram: (provinceCode: string, year: number, month: number, version: number) =>
+    `provincias/${slugPart(provinceCode)}/quiniela/programas/${year}-${String(month).padStart(2, "0")}-v${version}.pdf`,
 };
 
 // ─── Operations ────────────────────────────────────────────────

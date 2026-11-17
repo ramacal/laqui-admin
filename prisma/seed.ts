@@ -91,8 +91,8 @@ const PROVINCES: [code: string, name: string][] = [
 // ─── Reference: Quiniela lotteries ─────────────────────────────
 
 const LOTTERIES: [code: string, name: string][] = [
-  ["NACIONAL", "Nacional"],
-  ["PROVINCIA", "Provincia de Buenos Aires"],
+  ["CIUDAD", "Ciudad"],
+  ["PROVINCIA", "Provincia"],
   ["SANTA_FE", "Santa Fe"],
   ["CORDOBA", "Córdoba"],
   ["ENTRE_RIOS", "Entre Ríos"],
@@ -103,7 +103,7 @@ const LOTTERIES: [code: string, name: string][] = [
 // ─── DEMO data ─────────────────────────────────────────────────
 
 const DEMO_PROVINCE = "S"; // Santa Fe
-const DEMO_LOTTERIES = ["NACIONAL", "PROVINCIA", "SANTA_FE", "CORDOBA", "ENTRE_RIOS", "MONTEVIDEO"];
+const DEMO_LOTTERIES = ["CIUDAD", "PROVINCIA", "SANTA_FE", "CORDOBA", "ENTRE_RIOS", "MONTEVIDEO"];
 
 // Typical daily pattern, used only to generate demo calendars. TODO confirm times.
 const DEMO_DRAWS: { slot: QuinielaDrawSlot; time: string }[] = [

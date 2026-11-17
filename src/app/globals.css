@@ -568,3 +568,22 @@ nav.tags .tag {
   padding: 0.6rem 0.85rem;
   min-height: auto;
 }
+
+/* Quiniela monthly program (admin) */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.program-table {
+  border-collapse: collapse;
+  min-width: 640px;
+  width: 100%;
+}
+.program-table th,
+.program-table td {
+  border-bottom: 1px solid var(--border, #e5e5e5);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
