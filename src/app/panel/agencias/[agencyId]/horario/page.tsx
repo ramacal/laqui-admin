@@ -175,7 +175,7 @@ export default async function AgencySchedulePage({
         <ExceptionsList items={ownExceptions} canDelete={canExceptions} />
         {canExceptions && (
           <details id="agregar" open={Boolean(desde)}>
-            <summary>{desde ? "Cambiar para esta agencia" : "Agregar excepción"}</summary>
+            <summary>{desde ? "Horario especial para esta agencia" : "Agregar excepción"}</summary>
             <div className="spaced">
               <ExceptionForm
                 key={`${desde ?? ""}-${hasta ?? ""}`}

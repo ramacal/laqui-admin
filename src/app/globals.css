@@ -483,3 +483,17 @@ fieldset legend {
   padding: 0;
   margin-bottom: 0.3rem;
 }
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.row-actions .btn {
+  text-decoration: none;
+}
+.struck {
+  text-decoration: line-through;
+  color: #888780;
+}

@@ -67,7 +67,7 @@ export function ExceptionsList({
               <div className="row-actions">
                 <form action={openNormallyHere.bind(null, inheritedBy.agencyId, e.id)}>
                   <button type="submit" className="btn btn-secondary btn-sm">
-                    Abrir normal acá
+                    Abrir normal
                   </button>
                 </form>
                 <Link
@@ -75,7 +75,7 @@ export function ExceptionsList({
                   className="btn btn-secondary btn-sm"
                   scroll={false}
                 >
-                  Cambiar acá
+                  Abrir horario especial
                 </Link>
               </div>
             )}
