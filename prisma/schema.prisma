@@ -215,8 +215,11 @@ model Agency {
   assets             AgencyAsset[]
   employees          AgencyEmployee[]
   games              AgencyGameAvailability[]
+  // Schedule: template shared with other agencies, or own rules when null.
+  scheduleTemplateId String?
+  scheduleTemplate   ScheduleTemplate?        @relation(fields: [scheduleTemplateId], references: [id], onDelete: SetNull)
   scheduleRules      AgencyScheduleRule[]
-  scheduleExceptions AgencyScheduleException[]
+  scheduleExceptions ScheduleException[]
   customers          AgencyCustomer[]
   orders             Order[]
 
@@ -336,9 +339,10 @@ model User {
   platformRole  PlatformRole @default(NONE)
   active        Boolean      @default(true)
 
-  memberships AgencyEmployee[]
-  sessions    Session[]
-  accounts    Account[]
+  memberships       AgencyEmployee[]
+  scheduleTemplates ScheduleTemplate[]
+  sessions          Session[]
+  accounts          Account[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -407,7 +411,14 @@ model AgencyGameAvailability {
   @@id([agencyId, gameId])
 }
 
-// Weekly opening hours. Several ranges per weekday are allowed (split shifts).
+// ─────────────────────────────────────────────────────────────
+// Agency schedule (spec: agency-schedule)
+// Resolution: agency exception > template exception > weekly hours
+// (the agency's own rules when scheduleTemplateId is null, else the template's).
+// Times are wall-clock values in the agency time zone.
+// ─────────────────────────────────────────────────────────────
+
+// Own weekly hours of an agency WITHOUT template. Several ranges per weekday (split shifts).
 model AgencyScheduleRule {
   id       String   @id @default(cuid())
   agencyId String
@@ -419,18 +430,95 @@ model AgencyScheduleRule {
   @@index([agencyId, weekday])
 }
 
-// Date-specific override: closed all day, or special hours.
-model AgencyScheduleException {
-  id       String    @id @default(cuid())
-  agencyId String
-  agency   Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  date     DateTime  @db.Date
-  closed   Boolean   @default(true)
-  opensAt  DateTime? @db.Time(0)
-  closesAt DateTime? @db.Time(0)
-  note     String?   @db.Text
+// Reusable schedule an owner applies to several agencies.
+model ScheduleTemplate {
+  id          String @id @default(cuid())
+  name        String
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
 
-  @@unique([agencyId, date])
+  rules      ScheduleTemplateRule[]
+  exceptions ScheduleException[]
+  agencies   Agency[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId])
+}
+
+model ScheduleTemplateRule {
+  id         String           @id @default(cuid())
+  templateId String
+  template   ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  weekday    Int // 0 = Sunday .. 6 = Saturday
+  opensAt    DateTime         @db.Time(0)
+  closesAt   DateTime         @db.Time(0)
+
+  @@index([templateId, weekday])
+}
+
+enum ScheduleExceptionKind {
+  CLOSED
+  SPECIAL_HOURS // uses ScheduleExceptionSlot rows
+}
+
+// Closed days or special hours over a date range, for ONE agency or for a template
+// (exactly one of agencyId / templateId; enforced by a DB check constraint).
+model ScheduleException {
+  id         String                @id @default(cuid())
+  agencyId   String?
+  agency     Agency?               @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  templateId String?
+  template   ScheduleTemplate?     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  startDate  DateTime              @db.Date
+  endDate    DateTime              @db.Date // inclusive; = startDate for a single day
+  kind       ScheduleExceptionKind @default(CLOSED)
+  reason     String? // "Feriado: Navidad", "Vacaciones", "Inventario"
+  holidayId  String? // set when created from a national holiday
+  holiday    Holiday?              @relation(fields: [holidayId], references: [id], onDelete: SetNull)
+
+  slots ScheduleExceptionSlot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agencyId, startDate])
+  @@index([templateId, startDate])
+}
+
+model ScheduleExceptionSlot {
+  id          String            @id @default(cuid())
+  exceptionId String
+  exception   ScheduleException @relation(fields: [exceptionId], references: [id], onDelete: Cascade)
+  opensAt     DateTime          @db.Time(0)
+  closesAt    DateTime          @db.Time(0)
+
+  @@index([exceptionId])
+}
+
+enum HolidayKind {
+  FIXED // inamovible
+  MOVABLE // trasladable
+  BRIDGE // puente turístico / día no laborable
+}
+
+// National holiday calendar (reference only: never closes an agency by itself).
+// Synced from ArgentinaDatos with `npm run holidays:sync`.
+model Holiday {
+  id     String      @id @default(cuid())
+  date   DateTime    @db.Date
+  name   String
+  kind   HolidayKind
+  source String      @default("argentinadatos")
+
+  exceptions ScheduleException[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date, name])
+  @@index([date])
 }
 
 // ─────────────────────────────────────────────────────────────

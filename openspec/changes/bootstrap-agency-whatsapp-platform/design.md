@@ -166,3 +166,11 @@ Placeholders marked `TODO confirm` in the seed: Quini 6 price, Quiniela minimum 
   - Agencies without a legajo yet use `pendiente-{agencyId}` instead of the legajo.
 - **Keys are stored as written:** if a legajo changes, existing files keep working; new uploads use the new folder.
 - **Models:** `AgencyAsset` (logo variants, replaces `Agency.logoUrl`), `Receipt` (customer payment proof), `BetTicket` (tentative: photo of the printed ticket sent to the customer).
+
+## Agency Schedule
+
+- **Templates:** `ScheduleTemplate` (owned by a `User`) + `ScheduleTemplateRule` (weekday, opensAt, closesAt; several ranges per day). `Agency.scheduleTemplateId` links an agency to a template; `null` means the agency uses its own `AgencyScheduleRule` rows.
+- **Exceptions:** one table `ScheduleException` for both scopes (exactly one of `agencyId` / `templateId`, validated in `src/lib/schedule.ts`: MySQL rejects CHECKs on cascading FK columns (error 3823) and triggers need SUPER with binlog (error 1419)), with `startDate`..`endDate` (inclusive), `kind` (`CLOSED` | `SPECIAL_HOURS`), `reason`, optional `holidayId`, and `ScheduleExceptionSlot` rows for special hours. Replaces the unused `AgencyScheduleException`.
+- **Resolution** (`src/lib/schedule.ts`): agency exception > template exception > weekly hours (own or template). Evaluated in the agency's time zone. Times are wall-clock values stored as `TIME`; dates as `DATE`.
+- **Holidays:** `Holiday` (date, name, kind) synced from ArgentinaDatos (`https://api.argentinadatos.com/v1/feriados/{year}`, community API mirroring the official calendar) with `npm run holidays:sync` for the current and next year. Reference only: they never close an agency unless turned into an exception. If the API disappears, stored holidays remain and can be edited by hand.
+- **Taking bets** (later): agency open AND the Quiniela draw's `closeTime` not passed.

@@ -59,3 +59,10 @@
 - [x] 7.7 Owner is the license holder; platform admin assigns the owner email
 - [x] 7.8 Employee exit date (leftAt >= hiredAt), job, shift, notes and social media consent
 - [x] 7.9 Agency detail page with staff (owners/admins only)
+
+## 9. Agency Schedule
+
+- [x] 9.1 Schedule templates, exceptions with date ranges and slots, holidays
+- [x] 9.2 Holiday sync from ArgentinaDatos
+- [x] 9.3 Opening resolution (isAgencyOpen) in the agency time zone
+- [ ] 9.4 Panel screens: edit hours, templates, exceptions, holiday buttons
