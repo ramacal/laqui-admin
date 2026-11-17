@@ -69,3 +69,38 @@ Finances MUST be visible only to the agency's owner and admins (and platform adm
 - GIVEN a user who is an employee of La Brujita
 - WHEN they open La Brujita's finances
 - THEN the system denies access
+
+### Requirement: Cash Sessions per Shift
+
+Each agency MUST record its cash per shift ("caja"): one per day as a single shift, or two (morning and afternoon). The agency MUST set how many it uses per day (1 or 2) to suggest the shift; a day MUST NOT mix a single shift with morning/afternoon, and there MUST be at most one session per agency, date and shift.
+
+#### Scenario: Two shifts
+
+- GIVEN La Brujita works with 2 cash sessions per day
+- WHEN the morning session of 2026-11-18 is open
+- THEN another morning session for that day is rejected
+- AND an afternoon session can be opened
+
+#### Scenario: Single shift on Saturday
+
+- GIVEN a single-shift session exists on Saturday
+- WHEN someone opens a morning session that Saturday
+- THEN the system rejects it
+
+### Requirement: Cash Session Lifecycle
+
+Any staff member of the agency MUST be able to open a session with an opening cash amount (suggested: the counted cash of the previous session), record its movements (customer payments by payment method, prize payouts, small expenses), and close it with the counted cash. Closing MUST show the totals per payment method, prizes paid, expected cash (opening + cash in − cash out) and the difference with the counted cash. A non-zero difference MUST be recorded as a cash adjustment so the cash balance matches reality. A closed session MUST NOT change; only owners and agency admins may reopen it, which cancels its adjustment.
+
+#### Scenario: Close with a difference
+
+- GIVEN a session opened with $20.000 in cash
+- AND $50.000 cash payments and $15.000 cash prizes were recorded
+- WHEN it is closed with $54.000 counted
+- THEN expected cash is $55.000, the difference is −$1.000
+- AND a −$1.000 cash adjustment linked to the session is recorded
+
+#### Scenario: Movements go to their payment method
+
+- GIVEN an open session
+- WHEN a $3.000 payment by Mercado Pago is recorded
+- THEN the Mercado Pago balance increases by $3.000 and the expected cash does not change

@@ -23,16 +23,25 @@ datasource db {
 enum GameKind {
   QUINIELA // free amount per line, multiplied by draws x lotteries
   NUMBER_PICK // pick N numbers from a fixed range at a global price (Quini 6, Loto Plus)
+  UNIT // physical item sold by unit at a fixed price (Telekino, scratch cards): no numbers
 }
 
 // Base product = official lottery game (spec global-game-catalog). Rules are global;
 // national price with validity (GamePrice), optionally overridden per province (ProvinceGamePrice).
+// How a product is sold: by the Lotería terminal (grouped as one "Venta" in the cash register)
+// or as a physical item at the agency (its own cash register line, counted by quantity).
+enum SaleMode {
+  MACHINE
+  PHYSICAL
+}
+
 model GameDefinition {
-  id     String   @id @default(cuid())
-  code   String   @unique // "QUINIELA" | "QUINI_6" | "LOTO_PLUS"
-  name   String
-  kind   GameKind
-  active Boolean  @default(true)
+  id       String   @id @default(cuid())
+  code     String   @unique // "QUINIELA" | "QUINI_6" | "LOTO_PLUS"
+  name     String
+  kind     GameKind
+  saleMode SaleMode @default(MACHINE)
+  active   Boolean  @default(true)
 
   // NUMBER_PICK rules (null for Quiniela)
   pickCount Int?
@@ -249,6 +258,9 @@ model Agency {
   assets             AgencyAsset[]
   ownerProducts      OwnerProductAgency[]
   funds              AgencyFund[]
+  cashSessions       CashSession[]
+  // Cash sessions per day: 1 (single shift) or 2 (morning + afternoon). Suggests the shift.
+  cashSessionsPerDay Int                      @default(2)
   employees          AgencyEmployee[]
   games              AgencyGameAvailability[]
   // Schedule: always linked to the owner's general schedule (its exceptions apply).
@@ -382,6 +394,8 @@ model User {
   scheduleTemplates ScheduleTemplate[]
   ownerProducts     OwnerProduct[]
   fundMovements     FundMovement[]
+  cashOpened        CashSession[]      @relation("CashSessionOpenedBy")
+  cashClosed        CashSession[]      @relation("CashSessionClosedBy")
   sessions          Session[]
   accounts          Account[]
 
@@ -767,6 +781,7 @@ model OwnerProduct {
   description    String?   @db.Text
   imageKey       String?   @db.VarChar(500) // public bucket
   active         Boolean   @default(true)
+  saleMode       SaleMode  @default(PHYSICAL) // physical items get their own cash register line
   // Optional sale window, e.g. a raffle until its draw date (inclusive)
   availableFrom  DateTime? @db.Date
   availableUntil DateTime? @db.Date
@@ -888,6 +903,10 @@ model FundMovement {
   // Private bucket: agencias/{prov}/{legajo}/finanzas/{yyyy}/{mm}/{id}.{ext} (future uploads)
   attachmentKey String?           @db.VarChar(500)
 
+  // Set for movements recorded in a cash session (customer payments, prizes, expenses, close adjustment)
+  cashSessionId String?
+  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
   voidedAt    DateTime? // movements are voided, never deleted
@@ -897,4 +916,43 @@ model FundMovement {
 
   @@index([fundId, date])
   @@index([transferId])
+  @@index([cashSessionId])
+}
+
+// ─── Cash sessions ("cajas"), one per agency, date and shift ──────
+
+enum CashShift {
+  MORNING // turno mañana
+  AFTERNOON // turno tarde
+  SINGLE // turno único (not mixed with morning/afternoon on the same day)
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+model CashSession {
+  id       String            @id @default(cuid())
+  agencyId String
+  agency   Agency            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  date     DateTime          @db.Date
+  shift    CashShift
+  status   CashSessionStatus @default(OPEN)
+
+  openingCash Decimal  @db.Decimal(14, 2) // physical cash at the start (change)
+  openedById  String?
+  openedBy    User?    @relation("CashSessionOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  openedAt    DateTime @default(now())
+
+  countedCash Decimal?  @db.Decimal(14, 2) // physical cash counted at close
+  closedById  String?
+  closedBy    User?     @relation("CashSessionClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt    DateTime?
+  notes       String?   @db.Text
+
+  movements FundMovement[]
+
+  @@unique([agencyId, date, shift])
+  @@index([agencyId, date])
 }

@@ -141,6 +141,7 @@ export async function createOwnerProduct(_prev: FormState, form: FormData): Prom
         ownerUserId: access.user.id,
         name,
         description: str(form, "description") || null,
+        saleMode: str(form, "saleMode") === "MACHINE" ? "MACHINE" : "PHYSICAL",
         availableFrom,
         availableUntil,
         agencies: { create: agencyIds.map((agencyId) => ({ agencyId })) },
@@ -172,7 +173,13 @@ export async function updateOwnerProduct(productId: string, _prev: FormState, fo
       throw new CatalogValidationError("La fecha «hasta» es anterior a «desde».");
     await prisma.ownerProduct.update({
       where: { id: productId },
-      data: { name, description: str(form, "description") || null, availableFrom, availableUntil },
+      data: {
+        name,
+        description: str(form, "description") || null,
+        saleMode: str(form, "saleMode") === "MACHINE" ? "MACHINE" : "PHYSICAL",
+        availableFrom,
+        availableUntil,
+      },
     });
     return "Producto guardado.";
   });
@@ -252,9 +259,13 @@ export async function createGame(_prev: FormState, form: FormData): Promise<Form
     if (await prisma.gameDefinition.findUnique({ where: { code } }))
       throw new CatalogValidationError(`Ya existe un juego con ese nombre (${code}).`);
 
-    const kind = str(form, "kind") === "QUINIELA" ? "QUINIELA" : "NUMBER_PICK";
+    // Physical products (Telekino, scratch cards) are sold by unit: no numbers or modalities.
+    const saleMode = str(form, "saleMode") === "PHYSICAL" ? "PHYSICAL" : "MACHINE";
+    const kind = saleMode === "PHYSICAL" ? "UNIT" : str(form, "kind") === "QUINIELA" ? "QUINIELA" : "NUMBER_PICK";
     let rules: Record<string, number | null> = {};
-    if (kind === "NUMBER_PICK") {
+    if (kind === "UNIT") {
+      rules = {};
+    } else if (kind === "NUMBER_PICK") {
       const minNumber = intIn(form, "minNumber", 0, 99, "Número mínimo");
       const maxNumber = intIn(form, "maxNumber", 1, 999, "Número máximo");
       if (maxNumber <= minNumber) throw new CatalogValidationError("El número máximo tiene que ser mayor al mínimo.");
@@ -274,7 +285,7 @@ export async function createGame(_prev: FormState, form: FormData): Promise<Form
       rules = { maxDigits: intIn(form, "maxDigits", 1, 6, "Cifras máximas") };
     }
 
-    const modalities = str(form, "modalities")
+    const modalities = (kind === "UNIT" ? "" : str(form, "modalities"))
       .split(",")
       .map((m) => m.trim())
       .filter(Boolean);
@@ -287,6 +298,7 @@ export async function createGame(_prev: FormState, form: FormData): Promise<Form
         code,
         name,
         kind,
+        saleMode,
         ...rules,
         modalities: {
           create: modalities.map((m, i) => ({

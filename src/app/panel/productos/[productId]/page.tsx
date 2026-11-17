@@ -86,6 +86,18 @@ export default async function OwnerProductPage({ params }: { params: Promise<{ p
             <span className="small muted">Nombre</span>
             <input name="name" className="input" defaultValue={product.name} required maxLength={120} />
           </label>
+
+          <fieldset className="segmented">
+            <legend className="small muted">Cómo se vende</legend>
+            <label>
+              <input type="radio" name="saleMode" value="PHYSICAL" defaultChecked={product.saleMode === "PHYSICAL"} />
+              <span>Físico (se cuenta en la caja)</span>
+            </label>
+            <label>
+              <input type="radio" name="saleMode" value="MACHINE" defaultChecked={product.saleMode !== "PHYSICAL"} />
+              <span>No se cuenta en la caja</span>
+            </label>
+          </fieldset>
           <label className="field">
             <span className="small muted">Descripción</span>
             <textarea name="description" className="input textarea" rows={2} maxLength={500} defaultValue={product.description ?? ""} />

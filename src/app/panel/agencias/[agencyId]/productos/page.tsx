@@ -54,7 +54,9 @@ export default async function AgencyProductsPage({ params }: { params: Promise<{
                   <strong>{g.name}</strong>
                 </span>
                 <span className="small">
-                  {g.kind === "QUINIELA" ? `desde ${money(g.price.amount)} por renglón` : money(g.price.amount)}
+                  {g.kind === "QUINIELA"
+                    ? `desde ${money(g.price.amount)} por renglón`
+                    : `${money(g.price.amount)}${g.kind === "UNIT" ? " c/u" : ""}`}
                   {g.nextPrice ? <span className="muted"> · {money(g.nextPrice.amount)} desde {g.nextPrice.validFrom}</span> : null}
                 </span>
               </li>

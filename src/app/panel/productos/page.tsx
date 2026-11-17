@@ -117,6 +117,7 @@ export default async function OwnerProductsPage() {
                       <div className="stack-xs">
                         <strong className={p.active ? "" : "muted"}>{p.name}</strong>
                         <span className="muted small">
+                          {p.saleMode === "PHYSICAL" ? "Físico · " : ""}
                           {current ? money(current.amount) : "sin precio vigente"}
                           {next ? ` · ${money(next.amount)} desde ${next.validFrom}` : ""}
                           {" · "}
@@ -125,7 +126,7 @@ export default async function OwnerProductsPage() {
                             : p.agencies.map((a) => a.agency.name).join(", ")}
                         </span>
                       </div>
-                      <span className={`badge ${p.active && !ended ? "" : "neutral"}`}>
+                      <span className={`badge ${p.active && !ended ? "" : "neutral"}`} title={p.saleMode === "PHYSICAL" ? "Físico: se cuenta en la caja" : undefined}>
                         {!p.active ? "Pausado" : ended ? "Terminado" : "Activo"}
                       </span>
                     </Link>
@@ -162,8 +163,19 @@ export default async function OwnerProductsPage() {
                 ))}
               </fieldset>
               <details>
-                <summary className="small">Más opciones: descripción y fechas de venta</summary>
+                <summary className="small">Más opciones: cómo se vende, descripción y fechas de venta</summary>
                 <div className="stack-sm spaced">
+                  <fieldset className="segmented">
+                    <legend className="small muted">Cómo se vende</legend>
+                    <label>
+                      <input type="radio" name="saleMode" value="PHYSICAL" defaultChecked={true} />
+                      <span>Físico (se cuenta en la caja)</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="saleMode" value="MACHINE" defaultChecked={!true} />
+                      <span>No se cuenta en la caja</span>
+                    </label>
+                  </fieldset>
                   <label className="field">
                     <span className="small muted">Descripción (opcional)</span>
                     <textarea name="description" className="input textarea" rows={2} maxLength={500} />

@@ -71,3 +71,14 @@ The system MUST define the behavioral rules of each game at global scope.
 - WHEN the public flow resolves default mode
 - THEN the system uses the global complete-mode definition
 
+
+### Requirement: Machine and Physical Products
+
+Each official product MUST say how it is sold: by the Lotería terminal ("máquina": Quiniela, Quini 6, Loto Plus…) or as a physical item kept at the agency ("físico": Telekino, scratch cards…). Physical official products MUST support a "unit sale" kind with only a name and a unit price (no numbers or modalities); each scratch-card price is its own product. In the cash register, machine products are recorded together as one "Venta" amount, while each physical product gets its own line counted by quantity.
+
+#### Scenario: Scratch cards as physical products
+
+- GIVEN "Raspadita $500" and "Raspadita $1000" are physical unit-sale products
+- WHEN a cash session is closed
+- THEN each one has its own line where the quantity sold is entered
+- AND Quiniela is not listed separately because it is part of the machine "Venta"

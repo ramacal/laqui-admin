@@ -56,3 +56,13 @@ Customers MUST order owner products by quantity; the order MUST store the unit p
 - GIVEN "Rifa de fin de año" costs $2000
 - WHEN a customer orders 2 units
 - THEN the order line is 2 × $2000 = $4000 and keeps $2000 even if the price changes later
+
+### Requirement: Sale Mode of Owner Products
+
+Owner products MUST also say whether they are physical (counted in the cash register, the default) or not.
+
+#### Scenario: Raffle counted in the cash register
+
+- GIVEN "Rifa de fin de año" is a physical owner product offered in La Brujita
+- WHEN La Brujita's cash session is closed
+- THEN the raffle has its own line counted by quantity

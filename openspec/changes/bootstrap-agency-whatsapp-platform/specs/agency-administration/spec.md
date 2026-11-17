@@ -156,3 +156,10 @@ A platform admin MUST be able to assign or change the owner's email. When a pers
 - GIVEN a user who is owner or admin of an agency but not platform admin
 - WHEN the user tries to change the owner email
 - THEN the system denies the action
+
+#### Scenario: Employees use the cash register but not finances
+
+- GIVEN a user who is an employee of La Brujita
+- WHEN they open La Brujita's cash register
+- THEN they can open/close sessions and record payments and prizes
+- AND they cannot see bank balances or other finances

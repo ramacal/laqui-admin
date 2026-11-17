@@ -19,7 +19,12 @@ import {
 
 export const metadata = { title: "Juegos y precios · Laqui" };
 const TZ = "America/Argentina/Buenos_Aires";
-const KIND_LABEL = { QUINIELA: "Monto libre por renglón", NUMBER_PICK: "Números a precio fijo" } as const;
+const KIND_LABEL = {
+  QUINIELA: "Monto libre por renglón",
+  NUMBER_PICK: "Números a precio fijo",
+  UNIT: "Venta por unidad",
+} as const;
+const SALE_MODE_LABEL = { MACHINE: "Máquina", PHYSICAL: "Físico · se cuenta en la caja" } as const;
 
 type Row = { id: string; amount: { toString(): string }; validFrom: Date; note: string | null };
 const toRows = (rows: Row[]) =>
@@ -64,18 +69,22 @@ export default async function GamesPage() {
           const national = priceOn(g.prices, today);
           const byProvince = new Map(g.provinces.map((p) => [p.provinceId, p]));
           const custom = g.provinces.filter((p) => p.enabled && p.customPrice);
-          const unit = g.kind === "QUINIELA" ? " mínimo por renglón" : "";
+          const unit = g.kind === "QUINIELA" ? " mínimo por renglón" : g.kind === "UNIT" ? " c/u" : "";
           const enabledWithoutOwn = provinces.filter((p) => byProvince.get(p.id)?.enabled && !byProvince.get(p.id)?.customPrice);
           return (
             <li key={g.id} className="card stack-sm">
               <div className="row">
                 <div className="stack-xs">
-                  <strong>{g.name}</strong>
+                  <strong>
+                    {g.name} <span className={`tag ${g.saleMode === "PHYSICAL" ? "ok" : ""}`}>{SALE_MODE_LABEL[g.saleMode]}</span>
+                  </strong>
                   <span className="muted small">
                     {KIND_LABEL[g.kind]}
                     {g.kind === "NUMBER_PICK"
                       ? ` · ${g.pickCount} números del ${String(g.minNumber).padStart(2, "0")} al ${g.maxNumber}${g.extraMax != null ? ` + plus ${g.extraMin}–${g.extraMax}` : ""}`
-                      : ` · hasta ${g.maxDigits} cifras`}
+                      : g.kind === "QUINIELA"
+                        ? ` · hasta ${g.maxDigits} cifras`
+                        : ""}
                   </span>
                   {g.modalities.length > 0 && <span className="muted small">{g.modalities.map((m) => m.name).join(" · ")}</span>}
                 </div>
@@ -106,7 +115,7 @@ export default async function GamesPage() {
                     <PriceForm
                       action={addGamePrice.bind(null, g.id)}
                       today={today}
-                      amountLabel={g.kind === "QUINIELA" ? "Mínimo por renglón" : "Precio oficial"}
+                      amountLabel={g.kind === "QUINIELA" ? "Mínimo por renglón" : g.kind === "UNIT" ? "Precio por unidad" : "Precio oficial"}
                     />
                   </div>
                 </details>
@@ -199,8 +208,11 @@ export default async function GamesPage() {
       </ul>
 
       <section className="card stack-sm" id="nuevo">
-        <h2>Nuevo juego oficial</h2>
-        <p className="muted small">Por ejemplo Brinco, Poceada o Telekino. Queda activo y a la venta en las provincias que marques.</p>
+        <h2>Nuevo producto oficial</h2>
+        <p className="muted small">
+          De máquina (Brinco, Poceada…) o físico (Telekino, raspaditas). Queda activo y a la venta en las provincias que
+          marques.
+        </p>
         <NewGameForm
           action={createGame}
           today={today}

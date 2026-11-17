@@ -193,6 +193,8 @@ export type MovementInput = {
   description?: string | null;
   reference?: string | null;
   createdById?: string | null;
+  cashSessionId?: string | null; // recorded in a cash session
+  source?: "MANUAL" | "CASH_CLOSING" | "LOTTERY_TICKET";
 };
 
 async function assertDateOnOrAfterOpening(fundId: string, date: Date) {
@@ -218,6 +220,8 @@ export async function addMovement(input: MovementInput) {
       description: input.description?.trim() || null,
       reference: input.reference?.trim() || null,
       createdById: input.createdById ?? null,
+      cashSessionId: input.cashSessionId ?? null,
+      source: input.source ?? "MANUAL",
     },
   });
 }
