@@ -185,3 +185,10 @@ Placeholders marked `TODO confirm` in the seed: Quini 6 price, Quiniela minimum 
 - **Orders:** `Order.gameId` is optional (owner-products-only orders); `OrderItem` kind `OWNER_PRODUCT` keeps product name, quantity and unit price as snapshots.
 - **Catalog** (`src/lib/catalog.ts`): base game offered when active + enabled in province + not hidden in agency + price in effect; owner product when active + linked + in window + price in effect.
 - **Official price + province override:** `GamePrice` holds each game's official price history; `ProvinceGameAvailability.customPrice` marks provinces that use their own `ProvinceGamePrice` rows instead (copy on modify: the official price in effect is copied as the province's starting price). "Volver al precio oficial" clears the flag and the own rows. The "Juegos y precios" screen is organized per game, and platform admins can register new official games (rules, modalities, official price, provinces).
+
+## Agency Finances
+
+- `AgencyFund` (payment method of ONE agency): kind (cash, bank account, digital wallet, card terminal, other), type-specific columns (provider, holder, CBU/CVU, alias, merchant number), owner reference, `showToCustomers`, opening balance and date, active. One bank account per agency (validated in code); "Efectivo" + "Cuenta bancaria" created for every agency.
+- `FundMovement`: date, direction, positive amount (DB check), kind (Lotería debit/credit, customer payment, prize payout, expense, transfer, adjustment, other), description, reference, source (manual now; Lotería ticket and cash closing later), creator, `voidedAt` (never deleted). Transfers are two movements sharing `transferId`; voiding one voids both.
+- Balance = opening + IN − OUT of non-voided movements between the opening date and the given date (`src/lib/finance.ts`), never stored. Owner totals sum their agencies.
+- Money input accepts Argentine format ("1.500,50").

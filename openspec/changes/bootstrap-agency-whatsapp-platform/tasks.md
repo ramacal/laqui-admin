@@ -74,3 +74,12 @@
 - [x] 10.3 Agency catalog resolution (agencyCatalog) and owner product order lines
 - [x] 10.4 Screens (validation scaffold): platform admin games and province prices; owner "Productos" (official: visibility per agency; own: list, agencies, prices); agency catalog of the day
 - [x] 10.5 National price per game with province override (copy on modify); new official games from the panel
+
+## 11. Agency Finances
+
+- [x] 11.1 Payment methods per agency (one bank account; cash, wallets, terminals), defaults per agency
+- [x] 11.2 Movements (in/out, type, reference, origin), transfers between methods, voiding; calculated balances
+- [x] 11.3 Screens (validation scaffold): agency finances, owner totals in the panel
+- [ ] 11.4 Load movements from a Lotería ticket/settlement (pending: ticket format)
+- [ ] 11.5 Cash closings by employees as a movement source
+- [ ] 11.6 Attach receipts to movements (private storage)

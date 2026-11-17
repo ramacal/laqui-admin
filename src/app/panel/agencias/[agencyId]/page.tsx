@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { publicUrl } from "@/lib/storage";
 import { formatRanges, isAgencyOpen } from "@/lib/schedule";
 import { agencyCatalog } from "@/lib/catalog";
+import { agencyBalances } from "@/lib/finance";
+import { money } from "@/components/products/price-parts";
 import { OwnerEmailForm } from "@/components/owner-email-form";
 import { assignOwnerEmail } from "./actions";
 
@@ -54,7 +56,11 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
     where: { agencyId, role: "OWNER", active: true },
     select: { firstName: true, lastName: true, email: true, userId: true },
   });
-  const [now, catalog] = await Promise.all([isAgencyOpen(agencyId), agencyCatalog(agencyId)]);
+  const [now, catalog, finances] = await Promise.all([
+    isAgencyOpen(agencyId),
+    agencyCatalog(agencyId),
+    canViewStaff(role) ? agencyBalances(agencyId) : Promise.resolve(null), // owners and admins only
+  ]);
   const isMember = access.memberships.some((m) => m.agency.id === agencyId);
   const roleLabel = !isMember && access.isPlatformAdmin ? "Admin de plataforma" : ROLE_LABEL[role];
 
@@ -151,6 +157,23 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
           ›
         </span>
       </Link>
+
+      {finances && (
+        <Link href={`/panel/agencias/${agencyId}/finanzas`} className="card row link-card">
+          <div className="stack-xs">
+            <strong>Finanzas · {money(finances.total.toString())}</strong>
+            <span className="small muted">
+              {finances.funds
+                .filter((f) => f.fund.active)
+                .map((f) => `${f.fund.name} ${money(f.balance.toString())}`)
+                .join(" · ")}
+            </span>
+          </div>
+          <span className="chevron" aria-hidden="true">
+            ›
+          </span>
+        </Link>
+      )}
 
       {access.isPlatformAdmin && owner && (
         <section className="card stack-sm">

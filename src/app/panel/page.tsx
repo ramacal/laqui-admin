@@ -4,6 +4,8 @@ import { ROLE_LABEL, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { publicUrl } from "@/lib/storage";
 import { SignOutButton } from "@/components/sign-out-button";
+import { money } from "@/components/products/price-parts";
+import { ownerFinanceTotals } from "@/lib/finance";
 
 export const metadata = { title: "Panel · Laqui" };
 
@@ -73,6 +75,8 @@ export default async function PanelPage() {
   const allAgencies = isPlatformAdmin
     ? await prisma.agency.findMany({ where: { active: true }, select: agencySummary, orderBy: { name: "asc" } })
     : [];
+  // Owner summary: money across all their agencies (spec agency-finances).
+  const finances = memberships.some((m) => m.role === "OWNER") ? await ownerFinanceTotals(user.id) : null;
 
   return (
     <main className="screen">
@@ -85,6 +89,25 @@ export default async function PanelPage() {
       </header>
 
       <section className="stack">
+        {finances && finances.agencies.length > 0 && (
+          <article className="card stack-sm">
+            <div className="row">
+              <h2>Finanzas</h2>
+              <strong className={finances.total.isNegative() ? "error" : ""}>{money(finances.total.toString())}</strong>
+            </div>
+            <ul className="list plain">
+              {finances.agencies.map(({ agency, total }) => (
+                <li key={agency.id} className="row exception-row">
+                  <Link href={`/panel/agencias/${agency.id}/finanzas`} className="link small">
+                    {agency.name}
+                  </Link>
+                  <span className={`small ${total.isNegative() ? "error" : ""}`}>{money(total.toString())}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        )}
+
         {isPlatformAdmin && (
           <Link href="/panel/juegos" className="card row link-card">
             <div className="stack-xs">

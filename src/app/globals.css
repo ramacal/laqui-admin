@@ -554,3 +554,13 @@ nav.tags .tag {
   outline: 2px solid #000096;
   outline-offset: 1px;
 }
+.big-number {
+  font-size: 1.8rem;
+  line-height: 1.2;
+}
+.voided {
+  opacity: 0.55;
+}
+.voided strong {
+  text-decoration: line-through;
+}

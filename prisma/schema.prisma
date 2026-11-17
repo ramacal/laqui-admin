@@ -248,6 +248,7 @@ model Agency {
 
   assets             AgencyAsset[]
   ownerProducts      OwnerProductAgency[]
+  funds              AgencyFund[]
   employees          AgencyEmployee[]
   games              AgencyGameAvailability[]
   // Schedule: always linked to the owner's general schedule (its exceptions apply).
@@ -380,6 +381,7 @@ model User {
   memberships       AgencyEmployee[]
   scheduleTemplates ScheduleTemplate[]
   ownerProducts     OwnerProduct[]
+  fundMovements     FundMovement[]
   sessions          Session[]
   accounts          Account[]
 
@@ -803,4 +805,96 @@ model OwnerProductAgency {
 
   @@id([productId, agencyId])
   @@index([agencyId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Agency finances (spec: agency-finances)
+// Each agency has its own payment methods ("medios de cobro"); exactly one bank account.
+// Balances are calculated (opening + in − out), never stored.
+// ─────────────────────────────────────────────────────────────
+
+enum FundKind {
+  CASH // efectivo / caja
+  BANK_ACCOUNT // the agency's bank account (one per agency)
+  DIGITAL_WALLET // Mercado Pago, Cuenta DNI, MODO, Ualá…
+  CARD_TERMINAL // posnet: Getnet, Payway, Clover…
+  OTHER
+}
+
+model AgencyFund {
+  id       String   @id @default(cuid())
+  agencyId String
+  agency   Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  kind     FundKind
+  name     String // "Efectivo", "Cuenta Banco Provincia", "Mercado Pago"
+
+  // Type-specific details
+  provider       String? // bank or wallet/terminal provider: "Banco Provincia", "Mercado Pago", "Getnet"
+  holderName     String? // titular
+  cbuCvu         String? @db.VarChar(22) // 22 digits
+  alias          String? @db.VarChar(40)
+  merchantNumber String? @db.VarChar(40) // número de comercio / terminal
+  reference      String? // free note for the owner
+
+  showToCustomers Boolean  @default(false) // offer these details to customers for paying
+  openingBalance  Decimal  @default(0) @db.Decimal(14, 2)
+  openingDate     DateTime @db.Date
+  active          Boolean  @default(true)
+  sortOrder       Int      @default(0)
+
+  movements FundMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agencyId])
+}
+
+enum MovementDirection {
+  IN
+  OUT
+}
+
+enum MovementKind {
+  LOTTERY_DEBIT // Lotería debita (lo recaudado)
+  LOTTERY_CREDIT // Lotería acredita (premios, comisiones, devoluciones)
+  CUSTOMER_PAYMENT // cobro a un cliente
+  PRIZE_PAYOUT // pago de premio a un cliente
+  EXPENSE // gasto
+  TRANSFER // between two payment methods of the agency (see transferId)
+  ADJUSTMENT // ajuste
+  OTHER
+}
+
+enum MovementSource {
+  MANUAL
+  LOTTERY_TICKET // future: from a Lotería ticket/settlement
+  CASH_CLOSING // future: from an employee cash closing
+}
+
+model FundMovement {
+  id            String            @id @default(cuid())
+  fundId        String
+  fund          AgencyFund        @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  date          DateTime          @db.Date
+  direction     MovementDirection
+  amount        Decimal           @db.Decimal(14, 2) // always positive; direction gives the sign
+  kind          MovementKind
+  description   String?
+  reference     String? // settlement / receipt number
+  source        MovementSource    @default(MANUAL)
+  // Both legs of a transfer share the same transferId.
+  transferId    String?           @db.VarChar(30)
+  // Private bucket: agencias/{prov}/{legajo}/finanzas/{yyyy}/{mm}/{id}.{ext} (future uploads)
+  attachmentKey String?           @db.VarChar(500)
+
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  voidedAt    DateTime? // movements are voided, never deleted
+  voidReason  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([fundId, date])
+  @@index([transferId])
 }
