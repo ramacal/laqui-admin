@@ -66,3 +66,10 @@
 - [x] 9.2 Holiday sync from ArgentinaDatos
 - [x] 9.3 Opening resolution (isAgencyOpen) in the agency time zone
 - [x] 9.4 Panel screens (validation scaffold): edit hours, templates, exceptions, holiday buttons
+
+## 10. Products and Prices
+
+- [x] 10.1 Base product prices per province with validity (ProvinceGamePrice), migrated from global prices
+- [x] 10.2 Owner products: one list per owner, offered per agency, unit price with validity, sale window
+- [x] 10.3 Agency catalog resolution (agencyCatalog) and owner product order lines
+- [x] 10.4 Screens (validation scaffold): platform admin games and province prices; owner "Productos" (official: visibility per agency; own: list, agencies, prices); agency catalog of the day

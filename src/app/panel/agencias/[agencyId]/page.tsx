@@ -5,6 +5,7 @@ import { ROLE_LABEL, agencyRole, canViewStaff, requireAccess } from "@/lib/acces
 import { prisma } from "@/lib/prisma";
 import { publicUrl } from "@/lib/storage";
 import { formatRanges, isAgencyOpen } from "@/lib/schedule";
+import { agencyCatalog } from "@/lib/catalog";
 import { OwnerEmailForm } from "@/components/owner-email-form";
 import { assignOwnerEmail } from "./actions";
 
@@ -53,7 +54,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
     where: { agencyId, role: "OWNER", active: true },
     select: { firstName: true, lastName: true, email: true, userId: true },
   });
-  const now = await isAgencyOpen(agencyId);
+  const [now, catalog] = await Promise.all([isAgencyOpen(agencyId), agencyCatalog(agencyId)]);
   const isMember = access.memberships.some((m) => m.agency.id === agencyId);
   const roleLabel = !isMember && access.isPlatformAdmin ? "Admin de plataforma" : ROLE_LABEL[role];
 
@@ -132,6 +133,18 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
             Hoy: {formatRanges(now.ranges)}
             {now.reason ? ` · ${now.reason}` : ""}
             {now.holidayWithoutException ? " · feriado sin excepción" : ""}
+          </span>
+        </div>
+        <span className="chevron" aria-hidden="true">
+          ›
+        </span>
+      </Link>
+
+      <Link href={`/panel/agencias/${agencyId}/productos`} className="card row link-card">
+        <div className="stack-xs">
+          <strong>Productos · {catalog.games.length + catalog.products.length} a la venta hoy</strong>
+          <span className="small muted">
+            {[...catalog.games.map((g) => g.name), ...catalog.products.map((p) => p.name)].join(", ") || "Nada a la venta"}
           </span>
         </div>
         <span className="chevron" aria-hidden="true">

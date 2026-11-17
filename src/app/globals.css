@@ -497,3 +497,29 @@ fieldset legend {
   text-decoration: line-through;
   color: #888780;
 }
+.textarea {
+  min-height: 4.5rem;
+  padding: 0.6rem 0.85rem;
+  resize: vertical;
+}
+nav.tags .tag {
+  text-decoration: none;
+  padding: 0.35rem 0.7rem;
+}
+.chip {
+  min-height: 36px;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  border: 1px solid #c8c7bf;
+  background: #fff;
+  color: #5f5e5a;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.chip.on {
+  border-color: #0f6e56;
+  background: #e1f5ee;
+  color: #085041;
+  font-weight: 600;
+}

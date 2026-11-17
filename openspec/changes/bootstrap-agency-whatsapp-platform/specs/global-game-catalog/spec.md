@@ -16,15 +16,27 @@ The system MUST maintain each supported game as a global definition independent 
 - WHEN an administrator queries supported games
 - THEN the system exposes `Quiniela`, `Quini 6`, and `Loto Plus`
 
-### Requirement: Global Pricing
+### Requirement: Province Pricing with Validity
 
-The system MUST define the base price of each supported game at global scope.
+Base products (official games) MUST be priced per province, because each provincial lottery sets them. Each price MUST have a "valid from" date; the price in effect at a moment is the latest one whose "valid from" has arrived. Platform admins MUST be able to schedule a future price, and past prices MUST be kept. For Quiniela the amount is the minimum per bet line.
 
-#### Scenario: Global price is resolved for Loto Plus
+#### Scenario: Scheduled price increase
 
-- GIVEN `Loto Plus` is configured
-- WHEN a public flow needs the base price
-- THEN the system returns the global configured price
+- GIVEN Quini 6 in Buenos Aires costs $2500 valid from 2026-01-01
+- AND a price of $3000 valid from 2026-12-01 was scheduled
+- WHEN the price is resolved on 2026-11-30
+- THEN it is $2500
+- AND on 2026-12-01 it is $3000
+
+#### Scenario: No price yet
+
+- GIVEN a base product offered in a province with no price in effect
+- WHEN an agency catalog is built
+- THEN that product is not offered for sale
+
+### Requirement: Base Product Availability
+
+A base product MUST be offered at an agency only when it is active globally, enabled in the agency's province, visible in the agency, and has a price in effect.
 
 ### Requirement: Global Rulesets
 

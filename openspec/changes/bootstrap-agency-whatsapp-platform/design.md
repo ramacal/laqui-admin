@@ -176,3 +176,11 @@ Placeholders marked `TODO confirm` in the seed: Quini 6 price, Quiniela minimum 
 - **Holidays:** `Holiday` (date, name, kind) synced from ArgentinaDatos (`https://api.argentinadatos.com/v1/feriados/{year}`, community API mirroring the official calendar) with `npm run holidays:sync` for the current and next year. Reference only: they never close an agency unless turned into an exception. If the API disappears, stored holidays remain and can be edited by hand.
 - **Taking bets** (later): agency open AND the Quiniela draw's `closeTime` not passed.
 - **Final UI note:** the current panel screens are a validation scaffold. In the final backoffice, an agency's schedule screen should lead with its weekly hours (the default), then date exceptions and holiday shortcuts, and offer "use these hours in other agencies" (templates) as a secondary action.
+
+## Products and Prices
+
+- **Base products** stay as `GameDefinition` (rules, modalities, active). Prices moved to `ProvinceGamePrice` (province, game, amount, validFrom); for Quiniela the amount is the minimum per bet line. The old global `basePrice`/`minLineAmount` were copied into every province offering the game (valid from 2026-01-01) before being dropped.
+- **Owner products:** `OwnerProduct` (one list per owner) + `OwnerProductPrice` (unit price history) + `OwnerProductAgency` (where it is offered). Optional sale window `availableFrom`..`availableUntil` (inclusive).
+- **Validity:** the price in effect on a date is the row with the latest `validFrom` <= date; a future row is a scheduled change. Same date = correction.
+- **Orders:** `Order.gameId` is optional (owner-products-only orders); `OrderItem` kind `OWNER_PRODUCT` keeps product name, quantity and unit price as snapshots.
+- **Catalog** (`src/lib/catalog.ts`): base game offered when active + enabled in province + not hidden in agency + price in effect; owner product when active + linked + in window + price in effect.

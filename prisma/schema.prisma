@@ -25,15 +25,14 @@ enum GameKind {
   NUMBER_PICK // pick N numbers from a fixed range at a global price (Quini 6, Loto Plus)
 }
 
+// Base product = official lottery game (spec global-game-catalog). Rules are global;
+// prices are per province with validity (ProvinceGamePrice).
 model GameDefinition {
   id     String   @id @default(cuid())
   code   String   @unique // "QUINIELA" | "QUINI_6" | "LOTO_PLUS"
   name   String
   kind   GameKind
   active Boolean  @default(true)
-
-  // Global price for one complete ticket. Null for Quiniela (amount is entered per line).
-  basePrice Decimal? @db.Decimal(12, 2)
 
   // NUMBER_PICK rules (null for Quiniela)
   pickCount Int?
@@ -42,9 +41,8 @@ model GameDefinition {
   extraMin  Int? // Loto Plus "número plus" 0..9
   extraMax  Int?
 
-  // QUINIELA rules (null for NUMBER_PICK)
-  minLineAmount Decimal? @db.Decimal(12, 2)
-  maxDigits     Int? // up to 4 digits per bet number
+  // QUINIELA rules (null for NUMBER_PICK). The minimum per line is a province price.
+  maxDigits Int? // up to 4 digits per bet number
 
   modalities GameModality[]
   provinces  ProvinceGameAvailability[]
@@ -94,7 +92,25 @@ model ProvinceGameAvailability {
   game       GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
   enabled    Boolean        @default(true)
 
+  prices ProvinceGamePrice[]
+
   @@id([provinceId, gameId])
+}
+
+// Price history of a base product in a province. In effect: the latest validFrom <= today.
+// Amount = ticket price (number pick) or minimum per bet line (Quiniela).
+model ProvinceGamePrice {
+  id           String                   @id @default(cuid())
+  provinceId   String
+  gameId       String
+  availability ProvinceGameAvailability @relation(fields: [provinceId, gameId], references: [provinceId, gameId], onDelete: Cascade)
+  amount       Decimal                  @db.Decimal(12, 2)
+  validFrom    DateTime                 @db.Date
+  note         String? // "Aumento IPLyC noviembre"
+
+  createdAt DateTime @default(now())
+
+  @@unique([provinceId, gameId, validFrom])
 }
 
 // A Quiniela lottery the user can pick (Nacional, Provincia, Santa Fe, ...).
@@ -213,6 +229,7 @@ model Agency {
   primaryColor String?
 
   assets             AgencyAsset[]
+  ownerProducts      OwnerProductAgency[]
   employees          AgencyEmployee[]
   games              AgencyGameAvailability[]
   // Schedule: always linked to the owner's general schedule (its exceptions apply).
@@ -344,6 +361,7 @@ model User {
 
   memberships       AgencyEmployee[]
   scheduleTemplates ScheduleTemplate[]
+  ownerProducts     OwnerProduct[]
   sessions          Session[]
   accounts          Account[]
 
@@ -563,14 +581,15 @@ enum OrderStatus {
 }
 
 model Order {
-  id         String         @id @default(cuid())
+  id         String          @id @default(cuid())
   agencyId   String
-  agency     Agency         @relation(fields: [agencyId], references: [id])
+  agency     Agency          @relation(fields: [agencyId], references: [id])
   customerId String
-  customer   Customer       @relation(fields: [customerId], references: [id])
-  gameId     String
-  game       GameDefinition @relation(fields: [gameId], references: [id])
-  status     OrderStatus    @default(CREATED)
+  customer   Customer        @relation(fields: [customerId], references: [id])
+  // Official game of the order; null for an order of owner products only.
+  gameId     String?
+  game       GameDefinition? @relation(fields: [gameId], references: [id])
+  status     OrderStatus     @default(CREATED)
 
   total Decimal @db.Decimal(12, 2)
 
@@ -618,9 +637,10 @@ enum OrderItemKind {
   QUINIELA_DIRECT
   QUINIELA_REDOBLONA
   NUMBER_PICK
+  OWNER_PRODUCT // owner's own product, ordered by quantity
 }
 
-// One bet line. Quiniela fields and number-pick fields are mutually exclusive by `kind`.
+// One order line. Quiniela, number-pick and owner-product fields are exclusive by `kind`.
 model OrderItem {
   id       String        @id @default(cuid())
   orderId  String
@@ -628,8 +648,16 @@ model OrderItem {
   kind     OrderItemKind
   position Int           @default(0) // display order
 
-  // Line amount as entered (Quiniela) or global unit price snapshot (number pick)
+  // Line amount: as entered (Quiniela), price snapshot (number pick), or
+  // quantity x unit price snapshot (owner product)
   amount Decimal @db.Decimal(12, 2)
+
+  // Owner product line (kind OWNER_PRODUCT); name and unit price are snapshots
+  ownerProductId String?
+  ownerProduct   OwnerProduct? @relation(fields: [ownerProductId], references: [id], onDelete: SetNull)
+  productName    String?
+  quantity       Int?
+  unitPrice      Decimal?      @db.Decimal(12, 2)
 
   // Quiniela: bet number (kept as string to preserve leading zeros) and "ubicación" (1, 5, 10, 20)
   number     String?
@@ -704,4 +732,57 @@ model BetTicket {
   createdAt DateTime @default(now())
 
   @@index([orderId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Owner products (spec: owner-products)
+// One list per owner; each product is offered in the agencies the owner picks.
+// ─────────────────────────────────────────────────────────────
+
+model OwnerProduct {
+  id             String    @id @default(cuid())
+  ownerUserId    String
+  owner          User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?   @db.Text
+  imageKey       String?   @db.VarChar(500) // public bucket
+  active         Boolean   @default(true)
+  // Optional sale window, e.g. a raffle until its draw date (inclusive)
+  availableFrom  DateTime? @db.Date
+  availableUntil DateTime? @db.Date
+  sortOrder      Int       @default(0)
+
+  prices     OwnerProductPrice[]
+  agencies   OwnerProductAgency[]
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId])
+}
+
+// Unit price history. In effect: the latest validFrom <= today.
+model OwnerProductPrice {
+  id        String       @id @default(cuid())
+  productId String
+  product   OwnerProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  amount    Decimal      @db.Decimal(12, 2)
+  validFrom DateTime     @db.Date
+  note      String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([productId, validFrom])
+}
+
+// Agencies where an owner product is offered.
+model OwnerProductAgency {
+  productId String
+  product   OwnerProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  agencyId  String
+  agency    Agency       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@id([productId, agencyId])
+  @@index([agencyId])
 }

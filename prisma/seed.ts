@@ -21,8 +21,7 @@ const GAMES = [
     code: "QUINIELA",
     name: "Quiniela",
     kind: "QUINIELA" as const,
-    basePrice: null,
-    minLineAmount: new Prisma.Decimal(100), // TODO confirm minimum bet per line
+    defaultPrice: new Prisma.Decimal(100), // minimum per bet line. TODO confirm
     maxDigits: 4,
     modalities: [],
   },
@@ -30,7 +29,7 @@ const GAMES = [
     code: "QUINI_6",
     name: "Quini 6",
     kind: "NUMBER_PICK" as const,
-    basePrice: new Prisma.Decimal(2500), // TODO confirm current price
+    defaultPrice: new Prisma.Decimal(2500), // TODO confirm current price
     pickCount: 6,
     minNumber: 0,
     maxNumber: 45,
@@ -45,7 +44,7 @@ const GAMES = [
     code: "LOTO_PLUS",
     name: "Loto Plus",
     kind: "NUMBER_PICK" as const,
-    basePrice: new Prisma.Decimal(3000), // reference price from spec 001
+    defaultPrice: new Prisma.Decimal(3000), // reference price from spec 001
     pickCount: 6,
     minNumber: 0,
     maxNumber: 45,
@@ -145,7 +144,7 @@ const minusMinutes = (hhmm: string, mins: number) => {
 // ─── Seed steps ────────────────────────────────────────────────
 
 async function seedGames() {
-  for (const { modalities, ...game } of GAMES) {
+  for (const { modalities, defaultPrice: _price, ...game } of GAMES) {
     const saved = await prisma.gameDefinition.upsert({
       where: { code: game.code },
       create: game,
@@ -180,6 +179,13 @@ async function seedDemoProvince() {
       create: { provinceId: province.id, gameId: game.id },
       update: {},
     });
+    // Initial province price, only if the game has no price there yet.
+    const price = GAMES.find((g) => g.code === game.code)?.defaultPrice;
+    const hasPrice = await prisma.provinceGamePrice.count({ where: { provinceId: province.id, gameId: game.id } });
+    if (price && !hasPrice)
+      await prisma.provinceGamePrice.create({
+        data: { provinceId: province.id, gameId: game.id, amount: price, validFrom: new Date("2026-01-01T00:00:00Z"), note: "Precio inicial" },
+      });
   }
 
   for (const [i, code] of DEMO_LOTTERIES.entries()) {

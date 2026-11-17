@@ -85,16 +85,39 @@ export default async function PanelPage() {
       </header>
 
       <section className="stack">
-        {(isPlatformAdmin || memberships.some((m) => m.role === "OWNER")) && (
-          <Link href="/panel/horarios" className="card row link-card">
+        {isPlatformAdmin && (
+          <Link href="/panel/juegos" className="card row link-card">
             <div className="stack-xs">
-              <strong>Horario general</strong>
-              <span className="muted small">El horario que heredan tus agencias, con excepciones y feriados</span>
+              <strong>Juegos y precios</strong>
+              <span className="muted small">Juegos oficiales y sus precios por provincia, con vigencia</span>
             </div>
             <span className="chevron" aria-hidden="true">
               ›
             </span>
           </Link>
+        )}
+
+        {memberships.some((m) => m.role === "OWNER") && (
+          <>
+            <Link href="/panel/horarios" className="card row link-card">
+              <div className="stack-xs">
+                <strong>Horario general</strong>
+                <span className="muted small">El horario que heredan tus agencias, con excepciones y feriados</span>
+              </div>
+              <span className="chevron" aria-hidden="true">
+                ›
+              </span>
+            </Link>
+            <Link href="/panel/productos" className="card row link-card">
+              <div className="stack-xs">
+                <strong>Productos</strong>
+                <span className="muted small">Productos oficiales y propios, con su precio y en qué agencias se ofrecen</span>
+              </div>
+              <span className="chevron" aria-hidden="true">
+                ›
+              </span>
+            </Link>
+          </>
         )}
 
         {memberships.length > 0 && (
