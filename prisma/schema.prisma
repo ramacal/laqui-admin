@@ -96,9 +96,12 @@ model GameModality {
 // ─────────────────────────────────────────────────────────────
 
 model Province {
-  id   String @id @default(cuid())
-  code String @unique // e.g. "SF", "BA"
-  name String
+  id             String  @id @default(cuid())
+  code           String  @unique // e.g. "SF", "BA"
+  name           String
+  // Bank where the provincial lottery debits/credits agencies (e.g. Banco Provincia for B).
+  // New agencies get their single bank account with this bank.
+  settlementBank String?
 
   games     ProvinceGameAvailability[]
   lotteries ProvinceLotteryAvailability[]

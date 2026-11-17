@@ -70,10 +70,24 @@ export async function ensureDefaultFunds(agencyId: string) {
   const today = dateValue(todayIn(TZ));
   if (!funds.some((f) => f.kind === "CASH"))
     await prisma.agencyFund.create({ data: { agencyId, kind: "CASH", name: "Efectivo", openingDate: today, sortOrder: 0 } });
-  if (!funds.some((f) => f.kind === "BANK_ACCOUNT"))
-    await prisma.agencyFund.create({
-      data: { agencyId, kind: "BANK_ACCOUNT", name: "Cuenta bancaria", openingDate: today, sortOrder: 1 },
+  if (!funds.some((f) => f.kind === "BANK_ACCOUNT")) {
+    // The single bank account is where the provincial lottery settles (e.g. Banco Provincia for B).
+    const agency = await prisma.agency.findUnique({
+      where: { id: agencyId },
+      select: { province: { select: { settlementBank: true } } },
     });
+    const bank = agency?.province.settlementBank ?? null;
+    await prisma.agencyFund.create({
+      data: {
+        agencyId,
+        kind: "BANK_ACCOUNT",
+        name: bank === "Banco de la Provincia de Buenos Aires" ? "Cuenta Banco Provincia" : bank ? `Cuenta ${bank}` : "Cuenta bancaria",
+        provider: bank,
+        openingDate: today,
+        sortOrder: 1,
+      },
+    });
+  }
 }
 
 export type FundInput = {
