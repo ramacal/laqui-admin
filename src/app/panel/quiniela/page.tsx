@@ -11,6 +11,8 @@ export const metadata = { title: "Sorteos de Quiniela · Laqui" };
 export const dynamic = "force-dynamic";
 
 const TZ = "America/Argentina/Buenos_Aires";
+// Provinces whose program is downloaded by a scheduled job (src/lib/jobs/definitions.ts).
+const AUTOMATIC = ["B"];
 const hhmm = (d: Date | null) => (d ? d.toISOString().slice(11, 16) : null);
 const STATUS = { DRAFT: "borrador", PUBLISHED: "publicado", ARCHIVED: "archivado" } as const;
 const LOTTERY_ORDER = ["PROVINCIA", "CIUDAD", "CORDOBA", "SANTA_FE", "ENTRE_RIOS", "MONTEVIDEO"];
@@ -28,8 +30,12 @@ export default async function QuinielaPage() {
   const access = await requireAccess();
   if (!access.isPlatformAdmin) notFound();
   const today = todayIn(TZ);
+  // Provinces with an official program: imported automatically (B) or already loaded.
   const provinces = await prisma.province.findMany({
-    where: { games: { some: { enabled: true, game: { code: "QUINIELA" } } } },
+    where: {
+      games: { some: { enabled: true, game: { code: "QUINIELA" } } },
+      OR: [{ code: { in: AUTOMATIC } }, { programs: { some: {} } }],
+    },
     include: { games: { where: { game: { code: "QUINIELA" } }, select: { cutoffMinutes: true, maxBetAmount: true } } },
     orderBy: { name: "asc" },
   });
@@ -49,7 +55,7 @@ export default async function QuinielaPage() {
 
       {data.map(({ province, programs, today: day }) => {
         const rules = province.games[0];
-        const automatic = province.code === "B";
+        const automatic = AUTOMATIC.includes(province.code);
         return (
           <section key={province.id} className="stack-sm">
             <h2>{province.name}</h2>

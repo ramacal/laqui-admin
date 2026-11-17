@@ -2,16 +2,15 @@
 //
 // Two kinds of data:
 //   1. Reference data (games, provinces, lotteries) — meant to be real.
-//   2. DEMO data (one province's availability, a demo agency, a generated
-//      Quiniela calendar) — placeholders for local development only. The real
-//      calendar comes from the monthly import flow.
+//   2. DEMO data (one province's availability and a demo agency) — placeholders
+//      for local development only. Quiniela programs are never invented: they come
+//      from each province's official program (see src/lib/quiniela).
 //
 // Values marked "TODO confirm" are placeholders that must be checked against
 // current official prices/rules before going to production.
 
 import "dotenv/config";
 import { Prisma } from "../src/generated/prisma/client";
-import type { QuinielaDrawSlot } from "../src/generated/prisma/enums";
 import { prisma } from "../src/lib/prisma";
 
 // ─── Reference: games ─────────────────────────────────────────
@@ -105,16 +104,6 @@ const LOTTERIES: [code: string, name: string][] = [
 const DEMO_PROVINCE = "S"; // Santa Fe
 const DEMO_LOTTERIES = ["CIUDAD", "PROVINCIA", "SANTA_FE", "CORDOBA", "ENTRE_RIOS", "MONTEVIDEO"];
 
-// Typical daily pattern, used only to generate demo calendars. TODO confirm times.
-const DEMO_DRAWS: { slot: QuinielaDrawSlot; time: string }[] = [
-  { slot: "PREVIA", time: "10:15" },
-  { slot: "PRIMERA", time: "12:00" },
-  { slot: "MATUTINA", time: "15:00" },
-  { slot: "VESPERTINA", time: "18:00" },
-  { slot: "NOCTURNA", time: "21:00" },
-];
-const CLOSE_MINUTES_BEFORE = 15;
-
 const DEMO_AGENCY = {
   slug: "agencia-demo",
   name: "Agencia Demo",
@@ -135,11 +124,6 @@ const PLATFORM_ADMIN_EMAIL = "admin@laqui.test";
 
 // @db.Time / @db.Date columns: store wall-clock values on a UTC-anchored Date.
 const time = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);
-const minusMinutes = (hhmm: string, mins: number) => {
-  const [h, m] = hhmm.split(":").map(Number);
-  const total = h * 60 + m - mins;
-  return time(`${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`);
-};
 
 // ─── Seed steps ────────────────────────────────────────────────
 
@@ -192,49 +176,6 @@ async function seedDemoProvince() {
       where: { provinceId_lotteryId: { provinceId: province.id, lotteryId: lottery.id } },
       create: { provinceId: province.id, lotteryId: lottery.id, sortOrder: i },
       update: { sortOrder: i },
-    });
-  }
-
-  // Published demo calendar for the current and next month (Mon–Sat, no draws on Sunday).
-  const now = new Date();
-  for (const offset of [0, 1]) {
-    const first = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offset, 1));
-    const year = first.getUTCFullYear();
-    const month = first.getUTCMonth() + 1;
-
-    const exists = await prisma.provinceQuinielaMonthlyProgram.findUnique({
-      where: { provinceId_year_month_version: { provinceId: province.id, year, month, version: 1 } },
-    });
-    if (exists) continue; // never regenerate: published draws may already be referenced by orders
-
-    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    await prisma.provinceQuinielaMonthlyProgram.create({
-      data: {
-        provinceId: province.id,
-        year,
-        month,
-        status: "PUBLISHED",
-        publishedAt: new Date(),
-        days: {
-          create: Array.from({ length: daysInMonth }, (_, d) => {
-            const date = new Date(Date.UTC(year, month - 1, d + 1));
-            const isSunday = date.getUTCDay() === 0;
-            return {
-              date,
-              enabled: !isSunday,
-              draws: isSunday
-                ? undefined
-                : {
-                    create: DEMO_DRAWS.map(({ slot, time: t }) => ({
-                      slot,
-                      drawTime: time(t),
-                      closeTime: minusMinutes(t, CLOSE_MINUTES_BEFORE),
-                    })),
-                  },
-            };
-          }),
-        },
-      },
     });
   }
 }
