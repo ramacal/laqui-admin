@@ -88,8 +88,8 @@ export default async function PanelPage() {
         {(isPlatformAdmin || memberships.some((m) => m.role === "OWNER")) && (
           <Link href="/panel/horarios" className="card row link-card">
             <div className="stack-xs">
-              <strong>Plantillas de horario</strong>
-              <span className="muted small">Un horario para varias agencias, con excepciones y feriados</span>
+              <strong>Horario general</strong>
+              <span className="muted small">El horario que heredan tus agencias, con excepciones y feriados</span>
             </div>
             <span className="chevron" aria-hidden="true">
               ›

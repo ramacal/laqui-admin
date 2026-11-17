@@ -1,25 +1,21 @@
 "use server";
 
-// Server actions for agency hours (spec: agency-schedule). Every action re-checks
-// permissions on the server; the UI only hides what the user cannot do.
+// Server actions for agency hours (spec: agency-schedule).
+// Model the user sees: one "Horario general" per owner, inherited by their agencies.
+// Editing an agency's weekly hours personalizes it (copy on modify); it can go back
+// to the general schedule with one action. Every action re-checks permissions.
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import type { ScheduleExceptionKind } from "@/generated/prisma/enums";
-import {
-  agencyRole,
-  canEditAgencyExceptions,
-  canEditAgencyHours,
-  getAccess,
-  getEditableTemplate,
-  ownedAgencies,
-  type Access,
-} from "@/lib/access";
+import { agencyRole, canEditAgencyExceptions, canEditAgencyHours, getAccess, type Access } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import {
   ScheduleValidationError,
+  agencyOwnerUserId,
+  agenciesOwnedBy,
   createScheduleException,
+  ensureGeneral,
   exceptionFromHoliday,
-  getWeek,
+  linkUnscheduledAgencies,
   parseWeek,
   replaceWeek,
   todayIn,
@@ -30,8 +26,8 @@ import {
 
 export type FormState = { ok: boolean; message: string } | null;
 
-type ScopeKind = "agency" | "template";
-const toScope = (kind: ScopeKind, id: string): ScheduleScope => (kind === "agency" ? { agencyId: id } : { templateId: id });
+/** "agency": id = agencyId. "general": id = the owner's userId. */
+export type ScopeKind = "agency" | "general";
 const TZ = "America/Argentina/Buenos_Aires";
 
 class Forbidden extends Error {}
@@ -39,8 +35,9 @@ class Forbidden extends Error {}
 async function requireScope(kind: ScopeKind, id: string, need: "hours" | "exceptions"): Promise<Access> {
   const access = await getAccess();
   if (!access) throw new Forbidden("Tu sesión expiró. Volvé a ingresar.");
-  if (kind === "template") {
-    if (!(await getEditableTemplate(access, id))) throw new Forbidden("No podés modificar esta plantilla.");
+  if (kind === "general") {
+    if (!access.isPlatformAdmin && access.user.id !== id) throw new Forbidden("Solo el dueño modifica su horario general.");
+    if ((await agenciesOwnedBy(id)).length === 0) throw new Forbidden("Ese usuario no es dueño de ninguna agencia.");
     return access;
   }
   const role = agencyRole(access, id);
@@ -49,7 +46,11 @@ async function requireScope(kind: ScopeKind, id: string, need: "hours" | "except
   return access;
 }
 
-/** Run an action body and turn known errors into a form message. */
+async function resolveScope(kind: ScopeKind, id: string): Promise<ScheduleScope> {
+  if (kind === "agency") return { agencyId: id };
+  return { templateId: (await ensureGeneral(id)).id };
+}
+
 async function guarded(fn: () => Promise<string>): Promise<FormState> {
   try {
     const message = await fn();
@@ -61,108 +62,70 @@ async function guarded(fn: () => Promise<string>): Promise<FormState> {
   }
 }
 
-/** Keep an agency's hours when it stops following a template. */
-async function copyTemplateWeekToAgency(templateId: string, agencyId: string) {
-  await replaceWeek({ agencyId }, await getWeek({ templateId }));
-}
-
-// ─── Templates ─────────────────────────────────────────────────
-
-export async function createTemplate(_prev: FormState, form: FormData): Promise<FormState> {
-  const access = await getAccess();
-  if (!access) return { ok: false, message: "Tu sesión expiró. Volvé a ingresar." };
-  const name = String(form.get("name") ?? "").trim();
-  if (name.length < 2) return { ok: false, message: "Poné un nombre a la plantilla." };
-  if ((await ownedAgencies(access)).length === 0)
-    return { ok: false, message: "Solo los dueños de agencias pueden crear plantillas." };
-  const template = await prisma.scheduleTemplate.create({ data: { name, ownerUserId: access.user.id } });
-  redirect(`/panel/horarios/${template.id}`);
-}
-
-export async function renameTemplate(templateId: string, _prev: FormState, form: FormData) {
-  return guarded(async () => {
-    await requireScope("template", templateId, "hours");
-    const name = String(form.get("name") ?? "").trim();
-    if (name.length < 2) throw new ScheduleValidationError("Poné un nombre a la plantilla.");
-    await prisma.scheduleTemplate.update({ where: { id: templateId }, data: { name } });
-    return "Nombre guardado.";
-  });
-}
-
-/** Which agencies follow this template. Agencies removed from it keep its hours as their own. */
-export async function setTemplateAgencies(templateId: string, _prev: FormState, form: FormData) {
-  return guarded(async () => {
-    const access = await requireScope("template", templateId, "hours");
-    const selected = new Set(form.getAll("agencyId").map(String));
-    const agencies = await ownedAgencies(access);
-    let added = 0;
-    let removed = 0;
-    for (const a of agencies) {
-      if (selected.has(a.id) && a.scheduleTemplateId !== templateId) {
-        await prisma.agency.update({ where: { id: a.id }, data: { scheduleTemplateId: templateId } });
-        added++;
-      } else if (!selected.has(a.id) && a.scheduleTemplateId === templateId) {
-        await copyTemplateWeekToAgency(templateId, a.id);
-        await prisma.agency.update({ where: { id: a.id }, data: { scheduleTemplateId: null } });
-        removed++;
-      }
-    }
-    if (!added && !removed) return "Sin cambios.";
-    return `Listo: ${added} agencia(s) agregada(s), ${removed} quitada(s).`;
-  });
-}
-
-export async function deleteTemplate(templateId: string) {
-  await requireScope("template", templateId, "hours");
-  // Agencies using it keep the same hours as their own before it disappears.
-  const users = await prisma.agency.findMany({ where: { scheduleTemplateId: templateId }, select: { id: true } });
-  for (const a of users) await copyTemplateWeekToAgency(templateId, a.id);
-  await prisma.scheduleTemplate.delete({ where: { id: templateId } });
-  revalidatePath("/panel", "layout");
-  redirect("/panel/horarios");
-}
-
 // ─── Weekly hours ──────────────────────────────────────────────
 
-export async function saveWeek(kind: ScopeKind, id: string, _prev: FormState, form: FormData) {
+/** Save the owner's general schedule; their agencies without hours start inheriting it. */
+export async function saveGeneralWeek(ownerUserId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
-    await requireScope(kind, id, "hours");
-    if (kind === "agency") {
-      const agency = await prisma.agency.findUniqueOrThrow({ where: { id }, select: { scheduleTemplateId: true } });
-      if (agency.scheduleTemplateId)
-        throw new ScheduleValidationError("Esta agencia usa una plantilla: personalizá su horario primero.");
-    }
-    await replaceWeek(toScope(kind, id), parseWeek(form.get("week")));
-    return "Horario guardado.";
+    await requireScope("general", ownerUserId, "hours");
+    const week = parseWeek(form.get("week"));
+    const general = await ensureGeneral(ownerUserId);
+    await replaceWeek({ templateId: general.id }, week);
+    const linked = await linkUnscheduledAgencies(ownerUserId, general.id);
+    return linked ? `Horario general guardado. ${linked} agencia(s) empezaron a usarlo.` : "Horario general guardado.";
   });
 }
 
-/** Agency mode: follow a template, or use its own hours (starting from the template's). */
-export async function setAgencyMode(agencyId: string, _prev: FormState, form: FormData) {
+/** Save an agency's hours. If it inherited the general schedule, it becomes personalized. */
+export async function saveAgencyWeek(agencyId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
-    const access = await requireScope("agency", agencyId, "hours");
-    const mode = String(form.get("mode") ?? "");
-    const agency = await prisma.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { scheduleTemplateId: true } });
+    await requireScope("agency", agencyId, "hours");
+    const week = parseWeek(form.get("week"));
+    const agency = await prisma.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { customHours: true } });
+    await replaceWeek({ agencyId }, week);
+    // Copy on modify: only the weekly hours become its own; it keeps the general exceptions.
+    await prisma.agency.update({ where: { id: agencyId }, data: { customHours: true } });
+    return agency.customHours ? "Horario guardado." : "Guardado. Esta agencia ahora tiene horario personalizado.";
+  });
+}
 
-    if (mode === "custom") {
-      if (!agency.scheduleTemplateId) return "La agencia ya tiene horario propio.";
-      await copyTemplateWeekToAgency(agency.scheduleTemplateId, agencyId);
-      await prisma.agency.update({ where: { id: agencyId }, data: { scheduleTemplateId: null } });
-      return "Ahora la agencia tiene horario propio (copiado de la plantilla).";
-    }
-    const templateId = mode.replace(/^template:/, "");
-    if (!(await getEditableTemplate(access, templateId))) throw new Forbidden("No podés usar esa plantilla.");
-    await prisma.agency.update({ where: { id: agencyId }, data: { scheduleTemplateId: templateId } });
-    return "La agencia ahora sigue la plantilla.";
+/** Personalized agency back to its owner's general schedule (own weekly hours are discarded). */
+export async function resetAgencyToGeneral(agencyId: string, _prev: FormState, _form: FormData) {
+  return guarded(async () => {
+    await requireScope("agency", agencyId, "hours");
+    const ownerId = await agencyOwnerUserId(agencyId);
+    const general = ownerId ? await prisma.scheduleTemplate.findUnique({ where: { ownerUserId: ownerId } }) : null;
+    if (!general) throw new ScheduleValidationError("El dueño todavía no tiene un horario general cargado.");
+    await prisma.$transaction([
+      prisma.agencyScheduleRule.deleteMany({ where: { agencyId } }),
+      prisma.agency.update({ where: { id: agencyId }, data: { scheduleTemplateId: general.id, customHours: false } }),
+    ]);
+    return "La agencia volvió a usar el horario general.";
   });
 }
 
 // ─── Exceptions ────────────────────────────────────────────────
 
+/** "Abrir normal acá": this agency ignores one of the general schedule's exceptions. */
+export async function openNormallyHere(agencyId: string, generalExceptionId: string) {
+  await requireScope("agency", agencyId, "exceptions");
+  const agency = await prisma.agency.findUniqueOrThrow({ where: { id: agencyId }, select: { scheduleTemplateId: true } });
+  const general = await prisma.scheduleException.findUnique({ where: { id: generalExceptionId } });
+  if (!general || !agency.scheduleTemplateId || general.templateId !== agency.scheduleTemplateId) return;
+  await createScheduleException({
+    agencyId,
+    startDate: general.startDate.toISOString().slice(0, 10),
+    endDate: general.endDate.toISOString().slice(0, 10),
+    kind: "NORMAL_HOURS",
+    reason: general.reason ? `Abre normal (general: ${general.reason})` : "Abre normal",
+  });
+  revalidatePath("/panel", "layout");
+}
+
 export async function addException(kind: ScopeKind, id: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
     await requireScope(kind, id, "exceptions");
-    const exceptionKind = String(form.get("kind")) === "SPECIAL_HOURS" ? "SPECIAL_HOURS" : "CLOSED";
+    const exceptionKind: ScheduleExceptionKind = String(form.get("kind")) === "SPECIAL_HOURS" ? "SPECIAL_HOURS" : "CLOSED";
     let slots: Range[] = [];
     if (exceptionKind === "SPECIAL_HOURS") {
       try {
@@ -172,12 +135,11 @@ export async function addException(kind: ScopeKind, id: string, _prev: FormState
       }
     }
     const startDate = String(form.get("startDate") ?? "");
-    const endDate = String(form.get("endDate") || startDate);
     await createScheduleException({
-      ...toScope(kind, id),
+      ...(await resolveScope(kind, id)),
       startDate,
-      endDate,
-      kind: exceptionKind as ScheduleExceptionKind,
+      endDate: String(form.get("endDate") || startDate),
+      kind: exceptionKind,
       reason: String(form.get("reason") ?? "").trim() || null,
       slots,
     });
@@ -186,25 +148,29 @@ export async function addException(kind: ScopeKind, id: string, _prev: FormState
 }
 
 export async function deleteException(exceptionId: string) {
-  const e = await prisma.scheduleException.findUnique({ where: { id: exceptionId } });
+  const e = await prisma.scheduleException.findUnique({
+    where: { id: exceptionId },
+    include: { template: { select: { ownerUserId: true } } },
+  });
   if (!e) return;
   if (e.agencyId) await requireScope("agency", e.agencyId, "exceptions");
-  else if (e.templateId) await requireScope("template", e.templateId, "exceptions");
+  else if (e.template) await requireScope("general", e.template.ownerUserId, "exceptions");
   await prisma.scheduleException.delete({ where: { id: exceptionId } });
   revalidatePath("/panel", "layout");
 }
 
 export async function closeOnHoliday(kind: ScopeKind, id: string, holidayId: string) {
   await requireScope(kind, id, "exceptions");
-  await exceptionFromHoliday(holidayId, kind === "agency" ? { agencyId: id } : { templateId: id });
+  const scope = await resolveScope(kind, id);
+  await exceptionFromHoliday(holidayId, scope as { agencyId: string } | { templateId: string });
   revalidatePath("/panel", "layout");
 }
 
-/** "Cerrar todos": every holiday in the next 12 months not already covered in this scope. */
+/** "Cerrar en todos": every holiday in the next 12 months not already covered in this scope. */
 export async function closeOnAllHolidays(kind: ScopeKind, id: string) {
   await requireScope(kind, id, "exceptions");
-  const scope = toScope(kind, id);
+  const scope = await resolveScope(kind, id);
   const pending = (await upcomingHolidays([scope], todayIn(TZ), 365)).filter((h) => !h.covered);
-  for (const h of pending) await exceptionFromHoliday(h.id, kind === "agency" ? { agencyId: id } : { templateId: id });
+  for (const h of pending) await exceptionFromHoliday(h.id, scope as { agencyId: string } | { templateId: string });
   revalidatePath("/panel", "layout");
 }

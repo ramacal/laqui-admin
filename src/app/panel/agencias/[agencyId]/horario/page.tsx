@@ -18,54 +18,71 @@ import { WeeklyHoursEditor } from "@/components/schedule/weekly-hours-editor";
 import { ExceptionForm } from "@/components/schedule/exception-form";
 import { ExceptionsList, HolidaysList, formatDateRange } from "@/components/schedule/schedule-lists";
 import { SimpleForm } from "@/components/schedule/simple-form";
-import { addException, saveWeek, setAgencyMode } from "@/app/panel/horarios/actions";
+import { addException, resetAgencyToGeneral, saveAgencyWeek } from "@/app/panel/horarios/actions";
 
 export const metadata = { title: "Horario de la agencia · Laqui" };
 
 const SOURCE_LABEL = {
   AGENCY_EXCEPTION: "excepción de la agencia",
-  TEMPLATE_EXCEPTION: "excepción de la plantilla",
-  AGENCY_WEEKLY: "horario propio",
-  TEMPLATE_WEEKLY: "plantilla",
+  TEMPLATE_EXCEPTION: "excepción del horario general",
+  AGENCY_WEEKLY: "horario de la agencia",
+  TEMPLATE_WEEKLY: "horario general",
 } as const;
 
 const addDays = (iso: string, n: number) => new Date(dateValue(iso).getTime() + n * 86_400_000).toISOString().slice(0, 10);
 
-export default async function AgencySchedulePage({ params }: { params: Promise<{ agencyId: string }> }) {
+export default async function AgencySchedulePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ agencyId: string }>;
+  searchParams: Promise<{ desde?: string; hasta?: string }>;
+}) {
   const { agencyId } = await params;
+  const { desde, hasta } = await searchParams;
   const access = await requireAccess();
   const role = agencyRole(access, agencyId);
   if (!role) notFound();
 
   const agency = await prisma.agency.findUnique({
     where: { id: agencyId },
-    select: { id: true, name: true, timezone: true, scheduleTemplate: { select: { id: true, name: true, ownerUserId: true } } },
+    select: {
+      id: true,
+      name: true,
+      timezone: true,
+      customHours: true,
+      scheduleTemplate: { select: { id: true, ownerUserId: true } },
+    },
   });
   if (!agency) notFound();
 
   const canHours = canEditAgencyHours(role);
   const canExceptions = canEditAgencyExceptions(role);
-  const template = agency.scheduleTemplate;
-  const canEditTemplate = Boolean(template && (access.isPlatformAdmin || template.ownerUserId === access.user.id));
+  const general = agency.scheduleTemplate;
+  const inherits = Boolean(general) && !agency.customHours;
   const today = todayIn(agency.timezone);
   const agencyScope: ScheduleScope = { agencyId };
-  const scopes: ScheduleScope[] = template ? [agencyScope, { templateId: template.id }] : [agencyScope];
+  const generalScope: ScheduleScope | null = general ? { templateId: general.id } : null;
 
-  const [now, week, ownExceptions, templateExceptions, holidays, next7, templates] = await Promise.all([
+  const [now, week, ownExceptions, generalExceptions, holidays, next7] = await Promise.all([
     isAgencyOpen(agencyId),
-    getWeek(template ? { templateId: template.id } : agencyScope),
+    getWeek(inherits && generalScope ? generalScope : agencyScope),
     upcomingExceptions(agencyScope, today),
-    template ? upcomingExceptions({ templateId: template.id }, today) : Promise.resolve([]),
-    upcomingHolidays(scopes, today),
+    generalScope ? upcomingExceptions(generalScope, today) : Promise.resolve([]),
+    upcomingHolidays(generalScope ? [agencyScope, generalScope] : [agencyScope], today),
     Promise.all(Array.from({ length: 7 }, (_, i) => getDaySchedule(agencyId, addDays(today, i)))),
-    canHours
-      ? prisma.scheduleTemplate.findMany({
-          where: access.isPlatformAdmin ? {} : { ownerUserId: access.user.id },
-          select: { id: true, name: true },
-          orderBy: { name: "asc" },
-        })
-      : Promise.resolve([]),
   ]);
+
+  // General exceptions this agency already changed (any own exception overlapping its dates).
+  const overridden = new Set(
+    generalExceptions
+      .filter((g) => ownExceptions.some((o) => o.startDate <= g.endDate && o.endDate >= g.startDate))
+      .map((g) => g.id),
+  );
+  const generalLink =
+    general && (access.isPlatformAdmin || general.ownerUserId === access.user.id)
+      ? `/panel/horarios${general.ownerUserId === access.user.id ? "" : `?owner=${general.ownerUserId}`}`
+      : null;
 
   return (
     <main className="screen">
@@ -102,49 +119,35 @@ export default async function AgencySchedulePage({ params }: { params: Promise<{
       </section>
 
       <section className="stack-sm">
-        <h2>Horario semanal</h2>
-        {canHours && (
-          <div className="card">
-            <SimpleForm action={setAgencyMode.bind(null, agencyId)} submitLabel="Aplicar">
-              <fieldset className="stack-xs">
-                <legend className="small muted">Esta agencia usa</legend>
-                {templates.map((t) => (
-                  <label key={t.id} className="check">
-                    <input type="radio" name="mode" value={`template:${t.id}`} defaultChecked={template?.id === t.id} />
-                    <span>Plantilla «{t.name}»</span>
-                  </label>
-                ))}
-                <label className="check">
-                  <input type="radio" name="mode" value="custom" defaultChecked={!template} />
-                  <span>Horario propio</span>
-                </label>
-              </fieldset>
-              {templates.length === 0 && (
-                <p className="muted small">
-                  <Link href="/panel/horarios" className="link">
-                    Creá una plantilla
-                  </Link>{" "}
-                  para compartir el horario entre tus agencias.
-                </p>
-              )}
-            </SimpleForm>
+        <div className="row">
+          <h2>Horario semanal</h2>
+          <span className={`badge ${inherits ? "neutral" : ""}`}>
+            {!general ? "Propio" : inherits ? "Horario general" : "Personalizado"}
+          </span>
+        </div>
+
+        {inherits && (
+          <p className="muted small">
+            Usa el horario general.{" "}
+            {generalLink && (
+              <Link href={generalLink} className="link">
+                Ver horario general
+              </Link>
+            )}
+            {canHours && " Si lo cambiás acá, esta agencia queda personalizada y el resto no cambia."}
+          </p>
+        )}
+        {general && !inherits && canHours && (
+          <div className="card stack-xs">
+            <p className="small">Esta agencia tiene su propio horario semanal. Las excepciones del general se siguen aplicando.</p>
+            <SimpleForm action={resetAgencyToGeneral.bind(null, agencyId)} submitLabel="Volver al horario general" />
           </div>
         )}
 
-        {!template && canHours ? (
-          <WeeklyHoursEditor initial={week} action={saveWeek.bind(null, "agency", agencyId)} />
+        {canHours ? (
+          <WeeklyHoursEditor initial={week} action={saveAgencyWeek.bind(null, agencyId)} />
         ) : (
-          <div className="card stack-xs">
-            {template && (
-              <p className="small muted">
-                Sigue la plantilla «{template.name}».{" "}
-                {canEditTemplate && (
-                  <Link href={`/panel/horarios/${template.id}`} className="link">
-                    Editar plantilla
-                  </Link>
-                )}
-              </p>
-            )}
+          <div className="card">
             <ul className="list plain">
               {WEEKDAYS_UI.map(({ day, label }) => (
                 <li key={day} className="row exception-row">
@@ -158,19 +161,29 @@ export default async function AgencySchedulePage({ params }: { params: Promise<{
       </section>
 
       <section className="card stack-sm">
-        <h2>Excepciones de esta agencia</h2>
-        <ExceptionsList items={ownExceptions} canDelete={canExceptions} />
-        {template && templateExceptions.length > 0 && (
+        <h2>Excepciones</h2>
+        {generalExceptions.length > 0 && (
           <>
-            <h3 className="small muted">Heredadas de la plantilla</h3>
-            <ExceptionsList items={templateExceptions} canDelete={false} origin="plantilla" />
+            <h3 className="small muted">Del horario general</h3>
+            <ExceptionsList
+              items={generalExceptions}
+              inheritedBy={{ agencyId, canEdit: canExceptions, overridden }}
+            />
+            <h3 className="small muted">De esta agencia</h3>
           </>
         )}
+        <ExceptionsList items={ownExceptions} canDelete={canExceptions} />
         {canExceptions && (
-          <details>
-            <summary>Agregar excepción</summary>
+          <details id="agregar" open={Boolean(desde)}>
+            <summary>{desde ? "Cambiar para esta agencia" : "Agregar excepción"}</summary>
             <div className="spaced">
-              <ExceptionForm action={addException.bind(null, "agency", agencyId)} today={today} />
+              <ExceptionForm
+                key={`${desde ?? ""}-${hasta ?? ""}`}
+                action={addException.bind(null, "agency", agencyId)}
+                today={today}
+                defaultStart={desde}
+                defaultEnd={hasta}
+              />
             </div>
           </details>
         )}

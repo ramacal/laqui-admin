@@ -215,8 +215,11 @@ model Agency {
   assets             AgencyAsset[]
   employees          AgencyEmployee[]
   games              AgencyGameAvailability[]
-  // Schedule: template shared with other agencies, or own rules when null.
+  // Schedule: always linked to the owner's general schedule (its exceptions apply).
+  // customHours = true: the agency's weekly hours are its own AgencyScheduleRule rows
+  // (personalized); false: it inherits the general weekly hours.
   scheduleTemplateId String?
+  customHours        Boolean                  @default(false)
   scheduleTemplate   ScheduleTemplate?        @relation(fields: [scheduleTemplateId], references: [id], onDelete: SetNull)
   scheduleRules      AgencyScheduleRule[]
   scheduleExceptions ScheduleException[]
@@ -430,10 +433,11 @@ model AgencyScheduleRule {
   @@index([agencyId, weekday])
 }
 
-// Reusable schedule an owner applies to several agencies.
+// The owner's "Horario general": inherited by their agencies (Agency.scheduleTemplateId).
+// One per owner. Agencies that edit their hours become personalized (own AgencyScheduleRule).
 model ScheduleTemplate {
   id          String @id @default(cuid())
-  name        String
+  name        String @default("Horario general")
   ownerUserId String
   owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
 
@@ -444,7 +448,7 @@ model ScheduleTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([ownerUserId])
+  @@unique([ownerUserId]) // one general schedule per owner
 }
 
 model ScheduleTemplateRule {
@@ -461,6 +465,7 @@ model ScheduleTemplateRule {
 enum ScheduleExceptionKind {
   CLOSED
   SPECIAL_HOURS // uses ScheduleExceptionSlot rows
+  NORMAL_HOURS // agency only: ignore the general schedule's exception and use the weekly hours
 }
 
 // Closed days or special hours over a date range, for ONE agency or for a template

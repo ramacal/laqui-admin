@@ -7,12 +7,14 @@ import type { Range } from "@/lib/schedule";
 type Props = {
   action: (prev: FormState, form: FormData) => Promise<FormState>;
   today: string; // YYYY-MM-DD
+  defaultStart?: string; // prefill, e.g. when changing an inherited exception
+  defaultEnd?: string;
 };
 
-export function ExceptionForm({ action, today }: Props) {
+export function ExceptionForm({ action, today, defaultStart, defaultEnd }: Props) {
   const [state, formAction, pending] = useActionState(action, null);
-  const [kind, setKind] = useState<"CLOSED" | "SPECIAL_HOURS">("CLOSED");
-  const [startDate, setStartDate] = useState(today);
+  const [kind, setKind] = useState<"CLOSED" | "SPECIAL_HOURS">(defaultStart ? "SPECIAL_HOURS" : "CLOSED");
+  const [startDate, setStartDate] = useState(defaultStart ?? today);
   const [slots, setSlots] = useState<Range[]>([{ opensAt: "08:00", closesAt: "12:00" }]);
 
   return (
@@ -33,7 +35,7 @@ export function ExceptionForm({ action, today }: Props) {
         </label>
         <label className="field">
           <span className="small muted">Hasta (opcional)</span>
-          <input type="date" name="endDate" className="input" min={startDate} />
+          <input type="date" name="endDate" className="input" min={startDate} defaultValue={defaultEnd} />
         </label>
       </div>
 

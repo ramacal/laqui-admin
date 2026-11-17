@@ -11,7 +11,7 @@ export function SimpleForm({
   className = "stack-sm",
 }: {
   action: (prev: FormState, form: FormData) => Promise<FormState>;
-  children: ReactNode;
+  children?: ReactNode;
   submitLabel: string;
   className?: string;
 }) {

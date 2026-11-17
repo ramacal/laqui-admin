@@ -3,7 +3,9 @@
 // Resolution order for a given local date:
 //   1. the agency's own exception        (closed or special hours)
 //   2. the template's exception           (if the agency uses a template)
-//   3. weekly hours: the agency's own rules when it has no template, else the template's
+//   3. weekly hours: the agency's own rules when personalized (customHours) or without a
+//      general schedule, else the general schedule's
+// An agency NORMAL_HOURS exception cancels the general schedule's exception for that agency.
 // Holidays are reference only: reported, never applied.
 //
 // Times are stored as wall-clock TIME values (1970-01-01Txx:xx UTC) and dates as DATE
@@ -79,6 +81,7 @@ export async function getDaySchedule(agencyId: string, date: string): Promise<Da
     where: { id: agencyId },
     select: {
       scheduleTemplateId: true,
+      customHours: true,
       scheduleRules: { where: { weekday } },
       scheduleExceptions: { where: covering, include: exceptionInclude, orderBy: { createdAt: "desc" }, take: 1 },
       scheduleTemplate: {
@@ -99,23 +102,28 @@ export async function getDaySchedule(agencyId: string, date: string): Promise<Da
     return { date, source, closed: ranges.length === 0, ranges, reason: e.reason, holiday: holidayRow, holidayWithoutException: false };
   };
 
+  // 1. Agency exception. NORMAL_HOURS cancels the general schedule's exception for
+  //    this agency and falls through to its weekly hours.
   const agencyException = agency.scheduleExceptions[0];
-  if (agencyException) return fromException("AGENCY_EXCEPTION", agencyException);
+  const overridesGeneral = agencyException?.kind === "NORMAL_HOURS";
+  if (agencyException && !overridesGeneral) return fromException("AGENCY_EXCEPTION", agencyException);
 
-  const templateException = agency.scheduleTemplate?.exceptions[0];
+  // 2. General schedule exception (applies to every linked agency, personalized or not).
+  const templateException = overridesGeneral ? undefined : agency.scheduleTemplate?.exceptions[0];
   if (templateException) return fromException("TEMPLATE_EXCEPTION", templateException);
 
-  const usesTemplate = Boolean(agency.scheduleTemplateId && agency.scheduleTemplate);
-  const rules = usesTemplate ? agency.scheduleTemplate!.rules : agency.scheduleRules;
+  // 3. Weekly hours: own when personalized (or no general schedule), else inherited.
+  const inherits = Boolean(agency.scheduleTemplate) && !agency.customHours;
+  const rules = inherits ? agency.scheduleTemplate!.rules : agency.scheduleRules;
   const ranges = sortRanges(rules.map(toRange));
   return {
     date,
-    source: usesTemplate ? "TEMPLATE_WEEKLY" : "AGENCY_WEEKLY",
+    source: inherits ? "TEMPLATE_WEEKLY" : "AGENCY_WEEKLY",
     closed: ranges.length === 0,
     ranges,
-    reason: null,
+    reason: overridesGeneral ? (agencyException.reason ?? "Horario habitual") : null,
     holiday: holidayRow,
-    holidayWithoutException: Boolean(holidayRow),
+    holidayWithoutException: Boolean(holidayRow) && !overridesGeneral,
   };
 }
 
@@ -180,7 +188,9 @@ export function validateException(input: ExceptionInput) {
   if (!ISO_DATE.test(input.startDate) || !ISO_DATE.test(end)) throw new ScheduleValidationError("Fecha inválida.");
   if (end < input.startDate) throw new ScheduleValidationError("La fecha de fin es anterior a la de inicio.");
   const slots = input.slots ?? [];
-  if (input.kind === "CLOSED" && slots.length > 0)
+  if (input.kind === "NORMAL_HOURS" && !input.agencyId)
+    throw new ScheduleValidationError("«Horario habitual» solo se usa en una agencia, para anular una excepción del general.");
+  if (input.kind !== "SPECIAL_HOURS" && slots.length > 0)
     throw new ScheduleValidationError("Un día cerrado no lleva horarios.");
   if (input.kind === "SPECIAL_HOURS") {
     if (slots.length === 0) throw new ScheduleValidationError("El horario especial necesita al menos un tramo.");
@@ -333,3 +343,48 @@ export function parseWeek(json: unknown): Week {
 /** Human summary of ranges: "08:00–13:00 y 16:00–20:30" or "Cerrado". */
 export const formatRanges = (ranges: Range[]) =>
   ranges.length ? ranges.map((r) => `${r.opensAt}–${r.closesAt}`).join(" y ") : "Cerrado";
+
+// ─── General schedule (one per owner) ──────────────────────────
+
+/** The owner's "Horario general"; created on first use. */
+export async function ensureGeneral(ownerUserId: string) {
+  return prisma.scheduleTemplate.upsert({
+    where: { ownerUserId },
+    create: { ownerUserId },
+    update: {},
+  });
+}
+
+/** User id of the agency's active owner (null if the owner has not signed in yet). */
+export async function agencyOwnerUserId(agencyId: string) {
+  const owner = await prisma.agencyEmployee.findFirst({
+    where: { agencyId, role: "OWNER", active: true },
+    select: { userId: true },
+  });
+  return owner?.userId ?? null;
+}
+
+/** Active agencies where the user is owner. */
+export function agenciesOwnedBy(userId: string) {
+  return prisma.agency.findMany({
+    where: { active: true, employees: { some: { userId, role: "OWNER", active: true } } },
+    select: { id: true, name: true, scheduleTemplateId: true, customHours: true, _count: { select: { scheduleRules: true } } },
+    orderBy: { name: "asc" },
+  });
+}
+
+/** Link the owner's agencies to their general schedule. Agencies that already had their own
+ *  hours keep them (personalized); the rest inherit the general weekly hours. */
+export async function linkUnscheduledAgencies(ownerUserId: string, templateId: string) {
+  const agencies = (await agenciesOwnedBy(ownerUserId)).filter((a) => !a.scheduleTemplateId);
+  for (const a of agencies)
+    await prisma.agency.update({
+      where: { id: a.id },
+      data: { scheduleTemplateId: templateId, customHours: a._count.scheduleRules > 0 },
+    });
+  return agencies.filter((a) => a._count.scheduleRules === 0).length;
+}
+
+/** Text for an exception row. */
+export const describeException = (e: { kind: ScheduleExceptionKind; slots: Range[] }) =>
+  e.kind === "CLOSED" ? "Cerrado" : e.kind === "NORMAL_HOURS" ? "Abre con horario habitual" : formatRanges(e.slots);

@@ -6,7 +6,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/prisma";
-import { replaceWeek, type Week } from "../src/lib/schedule";
+import { ensureGeneral, getWeek, linkUnscheduledAgencies, replaceWeek, type Week } from "../src/lib/schedule";
 
 type EmployeeInput = {
   firstName: string;
@@ -92,18 +92,6 @@ async function main() {
       update: fields,
     });
 
-    // Default weekly hours, only when the agency has no hours yet: edits made in the
-    // panel (own hours or a template) are never overwritten.
-    if (data.defaultWeeklyHours?.length) {
-      const hasHours =
-        agency.scheduleTemplateId || (await prisma.agencyScheduleRule.count({ where: { agencyId: agency.id } })) > 0;
-      if (!hasHours) {
-        const week: Week = [[], [], [], [], [], [], []];
-        for (const block of data.defaultWeeklyHours)
-          for (const day of block.days) week[day].push({ opensAt: block.opensAt, closesAt: block.closesAt });
-        await replaceWeek({ agencyId: agency.id }, week);
-      }
-    }
 
     for (const game of games) {
       await prisma.agencyGameAvailability.upsert({
@@ -158,6 +146,20 @@ async function main() {
           data: { agencyId: agency.id, firstName: e.firstName, lastName: e.lastName, ...empData },
         });
     }
+  }
+
+  // Default hours go to the owner's "Horario general" (spec agency-schedule): only when it
+  // has no weekly hours yet, so changes made in the panel are never overwritten.
+  if (owner && data.defaultWeeklyHours?.length) {
+    const general = await ensureGeneral(owner.id);
+    const current = await getWeek({ templateId: general.id });
+    if (current.every((day) => day.length === 0)) {
+      const week: Week = [[], [], [], [], [], [], []];
+      for (const block of data.defaultWeeklyHours)
+        for (const day of block.days) week[day].push({ opensAt: block.opensAt, closesAt: block.closesAt });
+      await replaceWeek({ templateId: general.id }, week);
+    }
+    await linkUnscheduledAgencies(owner.id, general.id);
   }
 
   const slugs = data.agencies.map((a) => a.slug);

@@ -17,25 +17,32 @@ An agency's weekly hours MUST support several time ranges per weekday (split shi
 - THEN the agency is closed
 - AND at Monday 16:30 it is open
 
-### Requirement: Schedule Templates
+### Requirement: One General Schedule per Owner
 
-An owner MUST be able to define a schedule template (weekly hours and exceptions) and apply it to several of their agencies at once. Changing the template MUST change the schedule of every agency that uses it. An owner MUST only apply templates to agencies where they are owner.
+Each owner MUST have at most one "general schedule" (weekly hours and exceptions). Their agencies MUST inherit it by default. Changing it MUST change every agency that still inherits it. The user MUST NOT have to manage several templates or pick one.
 
 #### Scenario: One change, several agencies
 
-- GIVEN La Brujita and Olavarría use the template "Horario general"
-- WHEN the owner changes the template's Saturday hours
+- GIVEN La Brujita and Olavarría inherit the owner's general schedule
+- WHEN the owner changes the general Saturday hours
 - THEN both agencies use the new Saturday hours
 
-### Requirement: Custom Schedule per Agency
+### Requirement: Personalized Agency Schedule (copy on modify)
 
-An agency MUST be able to stop following its template and use its own weekly hours, and MAY return to the template later.
+An agency MUST have at most one schedule of its own. Editing the weekly hours of an agency that inherits the general schedule MUST make it "personalized": the edited hours become its own and it stops following the general weekly hours. A personalized agency MUST be able to go back to the general schedule with one action, discarding its own weekly hours.
 
-#### Scenario: One agency with its own hours
+#### Scenario: Editing one agency personalizes it
 
-- GIVEN El 20 has its own weekly hours and no template
-- WHEN the template "Horario general" changes
-- THEN El 20's hours do not change
+- GIVEN El 20 inherits the general schedule
+- WHEN the owner edits El 20's Sunday hours
+- THEN El 20 is personalized with the edited hours
+- AND a later change to the general schedule does not change El 20's hours
+
+#### Scenario: Back to the general schedule
+
+- GIVEN El 20 is personalized
+- WHEN the owner chooses "volver al horario general"
+- THEN El 20 inherits the general schedule again
 
 ### Requirement: Schedule Exceptions
 

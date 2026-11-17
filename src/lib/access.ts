@@ -78,22 +78,3 @@ export const canEditAgencyHours = (role: EmployeeRole | null) => role === "OWNER
 
 /** Agency exceptions (closures, special hours): owners and agency admins. */
 export const canEditAgencyExceptions = (role: EmployeeRole | null) => role === "OWNER" || role === "ADMIN";
-
-/** Agencies the user may apply templates to: where they are owner (all, for platform admins). */
-export async function ownedAgencies(access: Access) {
-  return prisma.agency.findMany({
-    where: access.isPlatformAdmin
-      ? { active: true }
-      : { active: true, employees: { some: { userId: access.user.id, role: "OWNER", active: true } } },
-    select: { id: true, name: true, scheduleTemplateId: true },
-    orderBy: { name: "asc" },
-  });
-}
-
-/** A template is editable by its owner and by platform admins. */
-export async function getEditableTemplate(access: Access, templateId: string) {
-  const template = await prisma.scheduleTemplate.findUnique({ where: { id: templateId } });
-  if (!template) return null;
-  if (!access.isPlatformAdmin && template.ownerUserId !== access.user.id) return null;
-  return template;
-}
