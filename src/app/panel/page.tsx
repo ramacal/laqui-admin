@@ -85,6 +85,18 @@ export default async function PanelPage() {
       </header>
 
       <section className="stack">
+        {(isPlatformAdmin || memberships.some((m) => m.role === "OWNER")) && (
+          <Link href="/panel/horarios" className="card row link-card">
+            <div className="stack-xs">
+              <strong>Plantillas de horario</strong>
+              <span className="muted small">Un horario para varias agencias, con excepciones y feriados</span>
+            </div>
+            <span className="chevron" aria-hidden="true">
+              ›
+            </span>
+          </Link>
+        )}
+
         {memberships.length > 0 && (
           <div className="stack-sm">
             <h2>Tus agencias</h2>

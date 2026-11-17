@@ -6,6 +6,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/prisma";
+import { replaceWeek, type Week } from "../src/lib/schedule";
 
 type EmployeeInput = {
   firstName: string;
@@ -37,6 +38,8 @@ type ImportFile = {
   ownerEmail: string;
   ownerFirstName: string;
   ownerLastName: string;
+  // Default weekly hours for agencies that have none yet (0 = Sunday .. 6 = Saturday).
+  defaultWeeklyHours?: { days: number[]; opensAt: string; closesAt: string }[];
   agencies: AgencyInput[];
 };
 
@@ -88,6 +91,19 @@ async function main() {
       create: { slug: a.slug, ...fields },
       update: fields,
     });
+
+    // Default weekly hours, only when the agency has no hours yet: edits made in the
+    // panel (own hours or a template) are never overwritten.
+    if (data.defaultWeeklyHours?.length) {
+      const hasHours =
+        agency.scheduleTemplateId || (await prisma.agencyScheduleRule.count({ where: { agencyId: agency.id } })) > 0;
+      if (!hasHours) {
+        const week: Week = [[], [], [], [], [], [], []];
+        for (const block of data.defaultWeeklyHours)
+          for (const day of block.days) week[day].push({ opensAt: block.opensAt, closesAt: block.closesAt });
+        await replaceWeek({ agencyId: agency.id }, week);
+      }
+    }
 
     for (const game of games) {
       await prisma.agencyGameAvailability.upsert({

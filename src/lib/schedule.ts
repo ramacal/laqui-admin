@@ -222,3 +222,114 @@ export async function exceptionFromHoliday(
     holidayId,
   });
 }
+
+// ─── Read helpers for the panel ────────────────────────────────
+
+export type ScheduleScope = { agencyId: string } | { templateId: string };
+
+/** Week as 7 arrays indexed by weekday (0 = Sunday). */
+export type Week = Range[][];
+
+/** UI order for Argentina: Monday first. */
+export const WEEKDAYS_UI = [
+  { day: 1, label: "Lunes" },
+  { day: 2, label: "Martes" },
+  { day: 3, label: "Miércoles" },
+  { day: 4, label: "Jueves" },
+  { day: 5, label: "Viernes" },
+  { day: 6, label: "Sábado" },
+  { day: 0, label: "Domingo" },
+] as const;
+
+export async function getWeek(scope: ScheduleScope): Promise<Week> {
+  const rules =
+    "agencyId" in scope
+      ? await prisma.agencyScheduleRule.findMany({ where: { agencyId: scope.agencyId } })
+      : await prisma.scheduleTemplateRule.findMany({ where: { templateId: scope.templateId } });
+  const week: Week = [[], [], [], [], [], [], []];
+  for (const r of rules) week[r.weekday].push(toRange(r));
+  return week.map(sortRanges);
+}
+
+/** Exceptions of a scope that end on or after `fromDate`, soonest first. */
+export async function upcomingExceptions(scope: ScheduleScope, fromDate: string, limit = 50) {
+  const rows = await prisma.scheduleException.findMany({
+    where: { ...scope, endDate: { gte: dateValue(fromDate) } },
+    include: { slots: true },
+    orderBy: { startDate: "asc" },
+    take: limit,
+  });
+  return rows.map((e) => ({
+    id: e.id,
+    startDate: e.startDate.toISOString().slice(0, 10),
+    endDate: e.endDate.toISOString().slice(0, 10),
+    kind: e.kind,
+    reason: e.reason,
+    holidayId: e.holidayId,
+    slots: sortRanges(e.slots.map(toRange)),
+  }));
+}
+
+/** National holidays from `fromDate` for `days` days, flagged when the scope(s) already cover them. */
+export async function upcomingHolidays(scopes: ScheduleScope[], fromDate: string, days = 180) {
+  const from = dateValue(fromDate);
+  const to = new Date(from.getTime() + days * 86_400_000);
+  const holidays = await prisma.holiday.findMany({ where: { date: { gte: from, lte: to } }, orderBy: { date: "asc" } });
+  const covering = scopes.length
+    ? await prisma.scheduleException.findMany({
+        where: { OR: scopes, startDate: { lte: to }, endDate: { gte: from } },
+        select: { startDate: true, endDate: true },
+      })
+    : [];
+  return holidays.map((h) => ({
+    id: h.id,
+    date: h.date.toISOString().slice(0, 10),
+    name: h.name,
+    kind: h.kind,
+    covered: covering.some((e) => e.startDate <= h.date && e.endDate >= h.date),
+  }));
+}
+
+/** Today's date in a time zone (YYYY-MM-DD). */
+export const todayIn = (timeZone: string) => localParts(new Date(), timeZone).date;
+
+// ─── Write helpers for the panel ───────────────────────────────
+
+/** Replace the weekly hours of an agency (own rules) or a template. */
+export async function replaceWeek(scope: ScheduleScope, week: Week) {
+  if (week.length !== 7) throw new ScheduleValidationError("La semana debe tener 7 días.");
+  week.forEach((ranges) => validateRanges(ranges));
+  const rows = week.flatMap((ranges, weekday) =>
+    ranges.map((r) => ({ weekday, opensAt: timeValue(r.opensAt), closesAt: timeValue(r.closesAt) })),
+  );
+  if ("agencyId" in scope) {
+    await prisma.$transaction([
+      prisma.agencyScheduleRule.deleteMany({ where: { agencyId: scope.agencyId } }),
+      prisma.agencyScheduleRule.createMany({ data: rows.map((r) => ({ ...r, agencyId: scope.agencyId })) }),
+    ]);
+  } else {
+    await prisma.$transaction([
+      prisma.scheduleTemplateRule.deleteMany({ where: { templateId: scope.templateId } }),
+      prisma.scheduleTemplateRule.createMany({ data: rows.map((r) => ({ ...r, templateId: scope.templateId })) }),
+    ]);
+  }
+}
+
+/** Parse the JSON a weekly editor posts; throws ScheduleValidationError on bad input. */
+export function parseWeek(json: unknown): Week {
+  let data: unknown;
+  try {
+    data = typeof json === "string" ? JSON.parse(json) : json;
+  } catch {
+    throw new ScheduleValidationError("No se pudo leer el horario.");
+  }
+  if (!Array.isArray(data) || data.length !== 7) throw new ScheduleValidationError("La semana debe tener 7 días.");
+  return data.map((day) => {
+    if (!Array.isArray(day)) throw new ScheduleValidationError("Horario inválido.");
+    return day.map((r) => ({ opensAt: String(r?.opensAt ?? ""), closesAt: String(r?.closesAt ?? "") }));
+  });
+}
+
+/** Human summary of ranges: "08:00–13:00 y 16:00–20:30" or "Cerrado". */
+export const formatRanges = (ranges: Range[]) =>
+  ranges.length ? ranges.map((r) => `${r.opensAt}–${r.closesAt}`).join(" y ") : "Cerrado";

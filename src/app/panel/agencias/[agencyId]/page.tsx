@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ROLE_LABEL, agencyRole, canViewStaff, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { publicUrl } from "@/lib/storage";
+import { formatRanges, isAgencyOpen } from "@/lib/schedule";
 import { OwnerEmailForm } from "@/components/owner-email-form";
 import { assignOwnerEmail } from "./actions";
 
@@ -52,6 +53,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
     where: { agencyId, role: "OWNER", active: true },
     select: { firstName: true, lastName: true, email: true, userId: true },
   });
+  const now = await isAgencyOpen(agencyId);
   const isMember = access.memberships.some((m) => m.agency.id === agencyId);
   const roleLabel = !isMember && access.isPlatformAdmin ? "Admin de plataforma" : ROLE_LABEL[role];
 
@@ -122,6 +124,20 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
           </div>
         </dl>
       </section>
+
+      <Link href={`/panel/agencias/${agencyId}/horario`} className={`card row link-card status ${now.open ? "is-open" : "is-closed"}`}>
+        <div className="stack-xs">
+          <strong>Horario · {now.open ? `Abierta, cierra ${now.closesAt}` : "Cerrada ahora"}</strong>
+          <span className="small">
+            Hoy: {formatRanges(now.ranges)}
+            {now.reason ? ` · ${now.reason}` : ""}
+            {now.holidayWithoutException ? " · feriado sin excepción" : ""}
+          </span>
+        </div>
+        <span className="chevron" aria-hidden="true">
+          ›
+        </span>
+      </Link>
 
       {access.isPlatformAdmin && owner && (
         <section className="card stack-sm">
