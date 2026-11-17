@@ -263,7 +263,6 @@ model Agency {
   ownerProducts      OwnerProductAgency[]
   funds              AgencyFund[]
   cashSessions       CashSession[]
-  creditAccounts     CreditAccount[]
   settlements        LotterySettlement[]
   // Cash sessions per day: 1 (single shift) or 2 (morning + afternoon). Suggests the shift.
   cashSessionsPerDay Int                      @default(2)
@@ -591,28 +590,43 @@ model Holiday {
 // ─────────────────────────────────────────────────────────────
 
 // Identified primarily by WhatsApp number (spec: Customer Registration by WhatsApp).
+// A person, once for the whole platform. The cellphone identifies them: the same number in
+// two agencies is the same person. Agencies may know someone without a cellphone (e.g. a
+// fiado customer); customers arriving by WhatsApp always have one.
 model Customer {
-  id              String @id @default(cuid())
-  cellphoneNumber String @unique // WhatsApp number, E.164 without "+"
-  name            String
+  id              String  @id @default(cuid())
+  firstName       String
+  lastName        String?
+  // Argentine cellphone as WhatsApp uses it: "549" + area code + number (src/lib/phone.ts)
+  cellphoneNumber String? @unique
+  dni             String? @unique // 7–8 digits, optional (big prizes require identification)
 
   agencies AgencyCustomer[]
   orders   Order[]
-  credits  CreditAccount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// The person as a customer of one agency: the alias is how they call them there
+// ("Juan del kiosco"). Fiados hang from here, so what someone owes is per agency.
 model AgencyCustomer {
-  agencyId    String
-  agency      Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  displayName String? // how this agency knows the customer
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  agencyId   String
+  agency     Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  alias      String
+  notes      String?  @db.Text
+  active     Boolean  @default(true)
 
-  @@id([agencyId, customerId])
+  creditEntries CreditEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agencyId, customerId])
+  @@index([agencyId, alias])
 }
 
 enum OrderStatus {
@@ -996,28 +1010,7 @@ model CashSessionItem {
   @@unique([sessionId, ownerProductId])
 }
 
-// ─── Fiados: customers who owe the agency (spec: agency-finances) ──
-
-// A credit account belongs to one agency: the same person in another agency is another account.
-// Optionally linked to the WhatsApp customer when the agency knows their cellphone.
-model CreditAccount {
-  id         String    @id @default(cuid())
-  agencyId   String
-  agency     Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  name       String
-  phone      String?
-  notes      String?   @db.Text
-  active     Boolean   @default(true)
-
-  entries CreditEntry[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([agencyId, name])
-}
+// ─── Fiados: what agency customers owe (spec: agency-finances) ──
 
 enum CreditEntryKind {
   CHARGE // se le fió (sube la deuda)
@@ -1027,8 +1020,8 @@ enum CreditEntryKind {
 // Balance owed = charges − payments (not voided). Never stored, never deleted: voided.
 model CreditEntry {
   id            String          @id @default(cuid())
-  accountId     String
-  account       CreditAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      AgencyCustomer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   kind          CreditEntryKind
   amount        Decimal         @db.Decimal(14, 2) // always positive
   date          DateTime        @db.Date
@@ -1046,7 +1039,7 @@ model CreditEntry {
   voidReason  String?
   createdAt   DateTime  @default(now())
 
-  @@index([accountId, date])
+  @@index([customerId, date])
   @@index([cashSessionId])
 }
 

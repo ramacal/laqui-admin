@@ -2,53 +2,61 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { agencyRole, requireAccess } from "@/lib/access";
 import { SHIFT_LABEL, openSessionOf } from "@/lib/cash";
-import { accountDetail } from "@/lib/credit";
+import { customerDetail } from "@/lib/credit";
+import { fullName } from "@/lib/customers";
+import { formatCellphone } from "@/lib/phone";
 import { prisma } from "@/lib/prisma";
 import { money } from "@/components/products/price-parts";
 import { SimpleForm } from "@/components/schedule/simple-form";
-import { chargeAction, payAction, updateAccountAction, voidEntryAction } from "@/app/panel/caja/actions";
+import { CustomerFields } from "@/components/cash/customer-fields";
+import { chargeAction, payAction, updateCustomerAction, voidEntryAction } from "@/app/panel/caja/actions";
 
-export const metadata = { title: "Cuenta de fiado · Laqui" };
+export const metadata = { title: "Cliente · Laqui" };
 
 const fmt = (d: Date) => d.toLocaleDateString("es-AR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "2-digit" });
 
-// One customer's fiado account: what they owe, charge, register a payment.
-export default async function CreditAccountPage({ params }: { params: Promise<{ agencyId: string; accountId: string }> }) {
-  const { agencyId, accountId } = await params;
+// One agency customer: who they are, what they owe, charge, register a payment.
+export default async function CustomerPage({ params }: { params: Promise<{ agencyId: string; customerId: string }> }) {
+  const { agencyId, customerId } = await params;
   const access = await requireAccess();
   if (!agencyRole(access, agencyId)) notFound();
-  const exists = await prisma.creditAccount.findUnique({ where: { id: accountId }, select: { agencyId: true } });
+  const exists = await prisma.agencyCustomer.findUnique({ where: { id: customerId }, select: { agencyId: true } });
   if (!exists || exists.agencyId !== agencyId) notFound();
 
-  const [{ account, balance }, open, funds] = await Promise.all([
-    accountDetail(accountId),
+  const [{ customer, balance }, open, funds] = await Promise.all([
+    customerDetail(customerId),
     openSessionOf(agencyId),
     prisma.agencyFund.findMany({ where: { agencyId, active: true }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
   ]);
+  const person = customer.customer;
+  const otherAgencies = person._count.agencies - 1;
   const inSession = open ? `Va a la caja abierta (${SHIFT_LABEL[open.shift].toLowerCase()}).` : "No hay caja abierta: queda solo en la cuenta.";
 
   return (
     <main className="screen">
       <Link href={`/panel/agencias/${agencyId}/fiados`} className="back">
-        ← Fiados
+        ← Clientes y fiados
       </Link>
       <div className="stack-xs">
-        <h1>{account.name}</h1>
+        <h1>{customer.alias}</h1>
         <p className="muted small">
-          {account.phone ?? "sin celular"}
-          {account.customerId ? " · cliente de WhatsApp" : ""}
-          {account.notes ? ` · ${account.notes}` : ""}
+          {fullName(person)}
+          {" · "}
+          {formatCellphone(person.cellphoneNumber) ?? "sin celular"}
+          {person.dni ? ` · DNI ${person.dni}` : ""}
+          {otherAgencies > 0 ? ` · también cliente de ${otherAgencies} agencia(s) más` : ""}
         </p>
+        {customer.notes && <p className="small">{customer.notes}</p>}
       </div>
 
       <section className="card stack-xs">
-        <span className="small muted">Debe</span>
+        <span className="small muted">Debe en esta agencia</span>
         <strong className={`big-number ${balance.isZero() ? "" : "error"}`}>{money(balance.toString())}</strong>
       </section>
 
       <section className="card stack-sm">
         <h2>Fiar</h2>
-        <SimpleForm action={chargeAction.bind(null, accountId)} submitLabel="Cargar fiado">
+        <SimpleForm action={chargeAction.bind(null, customerId)} submitLabel="Cargar fiado">
           <div className="grid-2">
             <label className="field">
               <span className="small muted">Monto ($)</span>
@@ -65,11 +73,11 @@ export default async function CreditAccountPage({ params }: { params: Promise<{ 
 
       <section className="card stack-sm">
         <h2>Registrar pago</h2>
-        <SimpleForm action={payAction.bind(null, accountId)} submitLabel="Registrar pago">
+        <SimpleForm action={payAction.bind(null, customerId)} submitLabel="Registrar pago">
           <div className="grid-2">
             <label className="field">
               <span className="small muted">Monto ($)</span>
-              <input name="amount" className="input" inputMode="decimal" required defaultValue={balance.isPositive() ? balance.toString() : ""} />
+              <input name="amount" className="input" inputMode="decimal" required defaultValue={balance.isPositive() && !balance.isZero() ? balance.toString() : ""} />
             </label>
             <label className="field">
               <span className="small muted">¿Cómo pagó?</span>
@@ -87,12 +95,12 @@ export default async function CreditAccountPage({ params }: { params: Promise<{ 
       </section>
 
       <section className="card stack-sm">
-        <h2>Movimientos</h2>
-        {account.entries.length === 0 ? (
+        <h2>Fiados y pagos</h2>
+        {customer.creditEntries.length === 0 ? (
           <p className="muted small">Todavía no hay movimientos.</p>
         ) : (
           <ul className="list plain">
-            {account.entries.map((e) => (
+            {customer.creditEntries.map((e) => (
               <li key={e.id} className={`row exception-row ${e.voidedAt ? "voided" : ""}`}>
                 <div className="stack-xs">
                   <strong className="small">
@@ -100,9 +108,9 @@ export default async function CreditAccountPage({ params }: { params: Promise<{ 
                     {e.voidedAt ? " · ANULADO" : ""}
                   </strong>
                   <span className="small muted">
-                    {e.description ?? ""}
-                    {e.cashSession ? `${e.description ? " · " : ""}${SHIFT_LABEL[e.cashSession.shift].toLowerCase()}` : ""}
-                    {e.createdBy ? ` · ${e.createdBy.name}` : ""}
+                    {[e.description, e.cashSession ? SHIFT_LABEL[e.cashSession.shift].toLowerCase() : null, e.createdBy?.name]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </div>
                 <div className="row-actions">
@@ -127,19 +135,20 @@ export default async function CreditAccountPage({ params }: { params: Promise<{ 
       <details className="card">
         <summary>Editar datos</summary>
         <div className="spaced">
-          <SimpleForm action={updateAccountAction.bind(null, accountId)} submitLabel="Guardar">
-            <label className="field">
-              <span className="small muted">Nombre</span>
-              <input name="name" className="input" required maxLength={80} defaultValue={account.name} />
-            </label>
-            <label className="field">
-              <span className="small muted">Celular</span>
-              <input name="phone" className="input" inputMode="tel" defaultValue={account.phone ?? ""} />
-            </label>
-            <label className="field">
-              <span className="small muted">Nota</span>
-              <input name="notes" className="input" maxLength={200} defaultValue={account.notes ?? ""} />
-            </label>
+          <SimpleForm action={updateCustomerAction.bind(null, customerId)} submitLabel="Guardar">
+            <CustomerFields
+              values={{
+                firstName: person.firstName,
+                lastName: person.lastName,
+                alias: customer.alias,
+                phone: formatCellphone(person.cellphoneNumber),
+                dni: person.dni,
+                notes: customer.notes,
+              }}
+            />
+            {otherAgencies > 0 && (
+              <p className="small muted">Nombre, celular y DNI son de la persona: el cambio se ve en sus otras agencias. El alias es solo de esta.</p>
+            )}
           </SimpleForm>
         </div>
       </details>

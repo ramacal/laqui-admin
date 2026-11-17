@@ -104,7 +104,7 @@ export default async function CashSheetPage({ params }: { params: Promise<{ agen
       <section className="card stack-xs">
         <Line label="Deuda de caja (fiados del turno)" value={credit.debt} />
         {credit.charges.map((c) => (
-          <Line key={c.id} label={`· ${c.account.name}${c.description ? ` (${c.description})` : ""}`} value={c.amount} muted />
+          <Line key={c.id} label={`· ${c.customer.alias}${c.description ? ` (${c.description})` : ""}`} value={c.amount} muted />
         ))}
         <Line label="Efectivo esperado" value={sheet.expectedCash} strong />
         {session.countedCash && (

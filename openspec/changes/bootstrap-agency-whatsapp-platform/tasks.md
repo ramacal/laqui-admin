@@ -85,5 +85,5 @@
 - [ ] 11.6 Attach receipts to movements (private storage)
 - [x] 11.7 Cash sessions per shift (morning/afternoon or single): open, record, close with difference adjustment, reopen; opening adjustment keeps cash balance = physical cash (logic only)
 - [x] 10.6 Machine vs physical products (saleMode); unit-sale kind for physical official products (Telekino, scratch cards)
-- [x] 11.8 Cash closing screen matching the paper "Caja diaria" (physical products by quantity, machine "Venta", ingreso, aciertos, retiros, gastos, transferencias per account, deuda de caja); raspaditas $500/$1000 as official physical products
-- [x] 11.9 Fiados: credit accounts per agency, charges and payments in the open session, calculated balance, screens
+- [x] 11.8 Cash closing screen matching the paper "Caja diaria" (physical products by quantity, machine "Venta", ingreso, aciertos, retiros, gastos, transferencias per account, deuda de caja); raspaditas $500/$700/$1000 as official physical products
+- [x] 11.9 Fiados on agency customers (person: name, last name, AR cellphone, DNI; alias per agency), charges and payments in the open session, calculated balance, screens

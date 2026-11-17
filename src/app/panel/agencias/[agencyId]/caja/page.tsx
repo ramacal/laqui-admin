@@ -81,7 +81,7 @@ export default async function CashPage({ params }: { params: Promise<{ agencyId:
 
       <Link href={`/panel/agencias/${agencyId}/fiados`} className="card row link-card">
         <div className="stack-xs">
-          <strong>Fiados</strong>
+          <strong>Clientes y fiados</strong>
           <span className="small muted">Clientes que deben, cargar fiados y pagos</span>
         </div>
         <span className="chevron" aria-hidden="true">

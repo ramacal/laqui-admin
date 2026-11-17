@@ -120,7 +120,7 @@ The session MUST read like the paper "Caja diaria". Left column: opening cash ("
 
 ### Requirement: Fiados (Customer Credit)
 
-An agency MUST be able to keep credit accounts for its customers: name, optional cellphone (linked to the WhatsApp customer when the agency knows it) and notes. An account belongs to one agency; the same person in another agency is another account. Any staff member MUST be able to record a charge ("se le fió") or a payment; payments MUST enter a payment method (cash or the account the customer transferred to). Both MUST belong to the open cash session if there is one. The balance owed MUST be calculated (charges − payments); entries MUST be voided, never deleted, and MUST NOT be voided once their session is closed.
+Fiados MUST hang from the agency customer. A customer is a person once for the whole platform (first name, last name, optional Argentine cellphone, optional DNI), identified by cellphone or DNI: the same number in two agencies is the same person. Each agency knows them by its own alias ("Juan del kiosco") and keeps its own notes and its own debt. Cellphones MUST be accepted as usually written ("011 15 5555-0000", "2284 551234", "+54 9 11 …") and stored as WhatsApp uses them ("549" + area code + number); a number that is not a valid Argentine cellphone MUST be rejected with a clear message. Any staff member MUST be able to record a charge ("se le fió") or a payment; payments MUST enter a payment method (cash or the account the customer transferred to). Both MUST belong to the open cash session if there is one. The balance owed MUST be calculated (charges − payments); entries MUST be voided, never deleted, and MUST NOT be voided once their session is closed.
 
 #### Scenario: Fiado in the shift
 

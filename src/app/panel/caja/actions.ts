@@ -17,7 +17,8 @@ import {
   setSessionItems,
   voidSessionMovement,
 } from "@/lib/cash";
-import { chargeAccount, createAccount, payAccount, updateAccount, voidEntry } from "@/lib/credit";
+import { chargeCustomer, payCustomer, voidEntry } from "@/lib/credit";
+import { addAgencyCustomer, updateAgencyCustomer } from "@/lib/customers";
 import { FinanceValidationError } from "@/lib/finance";
 import { money } from "@/components/products/price-parts";
 import { prisma } from "@/lib/prisma";
@@ -49,8 +50,8 @@ async function guarded(fn: () => Promise<string>): Promise<FormState> {
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 const agencyOfSession = async (sessionId: string) =>
   (await prisma.cashSession.findUniqueOrThrow({ where: { id: sessionId }, select: { agencyId: true } })).agencyId;
-const agencyOfAccount = async (accountId: string) =>
-  (await prisma.creditAccount.findUniqueOrThrow({ where: { id: accountId }, select: { agencyId: true } })).agencyId;
+const agencyOfCustomer = async (customerId: string) =>
+  (await prisma.agencyCustomer.findUniqueOrThrow({ where: { id: customerId }, select: { agencyId: true } })).agencyId;
 
 // ─── Cash sessions ─────────────────────────────────────────────
 
@@ -128,43 +129,52 @@ export async function reopenSessionAction(sessionId: string) {
   revalidatePath("/panel", "layout");
 }
 
-// ─── Fiados ────────────────────────────────────────────────────
+// ─── Customers and fiados ──────────────────────────────────────
 
-export async function createAccountAction(agencyId: string, _prev: FormState, form: FormData) {
+const customerFields = (form: FormData) => ({
+  firstName: str(form, "firstName"),
+  lastName: str(form, "lastName"),
+  alias: str(form, "alias"),
+  phone: str(form, "phone"),
+  dni: str(form, "dni"),
+  notes: str(form, "notes"),
+});
+
+export async function addCustomerAction(agencyId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
     await requireMember(agencyId);
-    const account = await createAccount({ agencyId, name: str(form, "name"), phone: str(form, "phone"), notes: str(form, "notes") });
-    return `Cuenta de ${account.name} creada.`;
+    const c = await addAgencyCustomer(agencyId, customerFields(form));
+    return `«${c.alias}» agregado como cliente.`;
   });
 }
 
-export async function updateAccountAction(accountId: string, _prev: FormState, form: FormData) {
+export async function updateCustomerAction(customerId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
-    await requireMember(await agencyOfAccount(accountId));
-    await updateAccount(accountId, { name: str(form, "name"), phone: str(form, "phone"), notes: str(form, "notes") });
+    await requireMember(await agencyOfCustomer(customerId));
+    await updateAgencyCustomer(customerId, customerFields(form));
     return "Datos guardados.";
   });
 }
 
-export async function chargeAction(accountId: string, _prev: FormState, form: FormData) {
+export async function chargeAction(customerId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
-    const access = await requireMember(await agencyOfAccount(accountId));
-    const e = await chargeAccount({ accountId, amount: str(form, "amount"), description: str(form, "description"), userId: access.user.id });
+    const access = await requireMember(await agencyOfCustomer(customerId));
+    const e = await chargeCustomer({ customerId, amount: str(form, "amount"), description: str(form, "description"), userId: access.user.id });
     return `Fiado de ${money(e.amount.toString())} cargado${e.cashSessionId ? " en la caja abierta" : ""}.`;
   });
 }
 
-export async function payAction(accountId: string, _prev: FormState, form: FormData) {
+export async function payAction(customerId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
-    const access = await requireMember(await agencyOfAccount(accountId));
-    const e = await payAccount({ accountId, amount: str(form, "amount"), fundId: str(form, "fundId"), userId: access.user.id });
+    const access = await requireMember(await agencyOfCustomer(customerId));
+    const e = await payCustomer({ customerId, amount: str(form, "amount"), fundId: str(form, "fundId"), userId: access.user.id });
     return `Pago de ${money(e.amount.toString())} registrado${e.cashSessionId ? " en la caja abierta" : ""}.`;
   });
 }
 
 export async function voidEntryAction(entryId: string) {
-  const entry = await prisma.creditEntry.findUniqueOrThrow({ where: { id: entryId }, select: { accountId: true } });
-  await requireMember(await agencyOfAccount(entry.accountId));
+  const entry = await prisma.creditEntry.findUniqueOrThrow({ where: { id: entryId }, select: { customerId: true } });
+  await requireMember(await agencyOfCustomer(entry.customerId));
   await voidEntry(entryId, "Anulado");
   revalidatePath("/panel", "layout");
 }

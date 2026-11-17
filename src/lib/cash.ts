@@ -247,11 +247,11 @@ export async function sessionSheet(sessionId: string) {
     where: { id: sessionId },
     include: {
       movements: {
-        include: { fund: { select: { id: true, name: true, kind: true } }, creditEntry: { include: { account: { select: { name: true } } } } },
+        include: { fund: { select: { id: true, name: true, kind: true } }, creditEntry: { include: { customer: { select: { alias: true } } } } },
         orderBy: { createdAt: "asc" },
       },
       items: { orderBy: { name: "asc" } },
-      creditEntries: { where: { kind: "CHARGE" }, include: { account: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } },
+      creditEntries: { where: { kind: "CHARGE" }, include: { customer: { select: { id: true, alias: true } } }, orderBy: { createdAt: "asc" } },
       openedBy: { select: { name: true } },
       closedBy: { select: { name: true } },
     },
