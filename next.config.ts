@@ -4,6 +4,10 @@ import type { NextConfig } from "next";
 const storage = new URL(process.env.STORAGE_PUBLIC_URL ?? "http://localhost:8333/laqui-public");
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Photos of Lotería tickets and receipts are uploaded through server actions.
+    serverActions: { bodySizeLimit: "8mb" },
+  },
   images: {
     remotePatterns: [
       {

@@ -259,6 +259,7 @@ model Agency {
   ownerProducts      OwnerProductAgency[]
   funds              AgencyFund[]
   cashSessions       CashSession[]
+  settlements        LotterySettlement[]
   // Cash sessions per day: 1 (single shift) or 2 (morning + afternoon). Suggests the shift.
   cashSessionsPerDay Int                      @default(2)
   employees          AgencyEmployee[]
@@ -394,8 +395,9 @@ model User {
   scheduleTemplates ScheduleTemplate[]
   ownerProducts     OwnerProduct[]
   fundMovements     FundMovement[]
-  cashOpened        CashSession[]      @relation("CashSessionOpenedBy")
-  cashClosed        CashSession[]      @relation("CashSessionClosedBy")
+  cashOpened        CashSession[]       @relation("CashSessionOpenedBy")
+  settlementsLoaded LotterySettlement[] @relation("SettlementCreatedBy")
+  cashClosed        CashSession[]       @relation("CashSessionClosedBy")
   sessions          Session[]
   accounts          Account[]
 
@@ -849,6 +851,7 @@ model AgencyFund {
   cbuCvu         String? @db.VarChar(22) // 22 digits
   alias          String? @db.VarChar(40)
   merchantNumber String? @db.VarChar(40) // número de comercio / terminal
+  accountNumber  String? @db.VarChar(30) // bank account number as Lotería prints it ("C.A. 12345/0")
   reference      String? // free note for the owner
 
   showToCustomers Boolean  @default(false) // offer these details to customers for paying
@@ -905,7 +908,8 @@ model FundMovement {
 
   // Set for movements recorded in a cash session (customer payments, prizes, expenses, close adjustment)
   cashSessionId String?
-  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  cashSession   CashSession?       @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
+  settlement    LotterySettlement?
 
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -955,4 +959,42 @@ model CashSession {
 
   @@unique([agencyId, date, shift])
   @@index([agencyId, date])
+}
+
+// ─── Daily Lotería settlement ticket (spec: agency-finances) ──────
+
+enum SettlementDirection {
+  DEBIT // "será debitado de su C.A."
+  CREDIT // to be credited to the account
+}
+
+// One ticket per agency and issue day. Creates one movement in the agency's bank account
+// dated on the due date (VTO); editing updates it and voiding voids it.
+model LotterySettlement {
+  id            String              @id @default(cuid())
+  agencyId      String
+  agency        Agency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  issueDate     DateTime            @db.Date // day printed on the ticket
+  issuedAt      DateTime? // full print date/time, if known
+  dueDate       DateTime            @db.Date // VTO: day Lotería debits/credits the account
+  amount        Decimal             @db.Decimal(14, 2)
+  direction     SettlementDirection
+  accountNumber String?             @db.VarChar(30) // as printed, e.g. "C.A. 12345/0"
+  // Private bucket: agencias/{prov}/{legajo}/liquidaciones/{yyyy}/{mm}/{id}.{ext}
+  ticketKey     String?             @db.VarChar(500)
+  ticketMime    String?
+  notes         String?             @db.Text
+
+  movementId String?       @unique
+  movement   FundMovement? @relation(fields: [movementId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User?     @relation("SettlementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  voidedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agencyId, issueDate])
+  @@index([agencyId, dueDate])
 }

@@ -104,3 +104,26 @@ Any staff member of the agency MUST be able to open a session with an opening ca
 - GIVEN an open session
 - WHEN a $3.000 payment by Mercado Pago is recorded
 - THEN the Mercado Pago balance increases by $3.000 and the expected cash does not change
+
+### Requirement: Daily Lotería Settlement Ticket
+
+Every day the Lotería terminal prints a settlement ticket with a due date ("VTO"), a net amount, whether it will be debited from or credited to the agency's savings account, the account number, and the print date and time. The owner or an agency admin MUST be able to load it once per agency and issue date, with an optional photo stored privately. Loading it MUST create one movement in the agency's bank account dated on the due date (Lotería debit or credit); editing it MUST update that movement and voiding it MUST void the movement. If the account number differs from the agency's bank account, the system MUST warn before saving. Until the due date, it MUST be shown as an upcoming debit or credit.
+
+#### Scenario: Debit loaded from the ticket
+
+- GIVEN a ticket printed on 2026-11-17 for $450.000,00 to be debited on 2026-11-18
+- WHEN the admin loads it
+- THEN the bank account shows "Próximo débito: $450.000,00 el 18/11"
+- AND from 2026-11-18 its balance includes the debit
+
+#### Scenario: Same day loaded twice
+
+- GIVEN the 2026-11-17 ticket of La Brujita was loaded
+- WHEN someone loads another ticket for La Brujita issued on 2026-11-17
+- THEN the system rejects it
+
+#### Scenario: Missing tickets are flagged
+
+- GIVEN no ticket was loaded for a weekday in the last two weeks
+- WHEN the settlements list is shown
+- THEN that day is flagged as missing

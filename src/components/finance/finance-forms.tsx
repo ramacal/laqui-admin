@@ -29,6 +29,7 @@ type FundValues = {
   cbuCvu?: string | null;
   alias?: string | null;
   merchantNumber?: string | null;
+  accountNumber?: string | null;
   reference?: string | null;
   showToCustomers?: boolean;
   openingBalance?: string;
@@ -80,6 +81,12 @@ function FundFields({ kind, values, today }: { kind: FundKind; values?: FundValu
             </label>
           </div>
         </>
+      )}
+      {kind === "BANK_ACCOUNT" && (
+        <label className="field">
+          <span className="small muted">N.º de cuenta (como figura en el ticket de Lotería)</span>
+          <input name="accountNumber" className="input" maxLength={30} defaultValue={values?.accountNumber ?? ""} placeholder="C.A. 12345/0" />
+        </label>
       )}
       {kind === "CARD_TERMINAL" && (
         <label className="field">
@@ -291,6 +298,75 @@ export function TransferForm({ action, funds, today }: { action: Action; funds: 
       </label>
       <button type="submit" className="btn btn-primary" disabled={pending}>
         {pending ? "Guardando…" : "Registrar transferencia"}
+      </button>
+      <Result state={state} />
+    </form>
+  );
+}
+
+/** Daily Lotería ticket: amount, due date, debit/credit, account and photo. */
+export function SettlementForm({
+  action,
+  today,
+  tomorrow,
+  accountNumber,
+}: {
+  action: Action;
+  today: string;
+  tomorrow: string;
+  accountNumber: string | null;
+}) {
+  const [state, formAction, pending] = useActionState(action, null);
+  const askConfirm = Boolean(state && !state.ok && state.message.includes("confirmá"));
+  return (
+    <form action={formAction} className="stack-sm">
+      <div className="grid-2">
+        <label className="field">
+          <span className="small muted">Fecha del ticket</span>
+          <input type="date" name="issueDate" className="input" defaultValue={today} max={today} required />
+        </label>
+        <label className="field">
+          <span className="small muted">Vencimiento (VTO)</span>
+          <input type="date" name="dueDate" className="input" defaultValue={tomorrow} required />
+        </label>
+      </div>
+      <fieldset className="segmented">
+        <legend className="small muted">El saldo será</legend>
+        <label>
+          <input type="radio" name="direction" value="DEBIT" defaultChecked />
+          <span>Debitado</span>
+        </label>
+        <label>
+          <input type="radio" name="direction" value="CREDIT" />
+          <span>Acreditado</span>
+        </label>
+      </fieldset>
+      <div className="grid-2">
+        <label className="field">
+          <span className="small muted">Saldo ($)</span>
+          <input name="amount" className="input" inputMode="decimal" placeholder="450.000,00" required />
+        </label>
+        <label className="field">
+          <span className="small muted">Cuenta (C.A.)</span>
+          <input name="accountNumber" className="input" maxLength={30} defaultValue={accountNumber ?? ""} placeholder="C.A. 12345/0" />
+        </label>
+      </div>
+      <label className="field">
+        <span className="small muted">Foto del ticket (opcional)</span>
+        <input type="file" name="ticket" className="input file" accept="image/*,application/pdf" capture="environment" />
+      </label>
+      <label className="field">
+        <span className="small muted">Nota (opcional)</span>
+        <input name="notes" className="input" maxLength={200} />
+      </label>
+      {askConfirm && (
+        <label className="check">
+          <input type="checkbox" name="confirmAccount" />
+          <span>La cuenta es distinta pero quiero guardarlo igual</span>
+        </label>
+      )}
+      <button type="submit" className="btn btn-primary" disabled={pending}>
+        {pending ? "Guardando…" : "Cargar ticket"}
       </button>
       <Result state={state} />
     </form>

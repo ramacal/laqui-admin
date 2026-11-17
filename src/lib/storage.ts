@@ -6,6 +6,7 @@
 //   agencias/{provincia}/{legajo}/empleados/{employeeId}/foto.{ext}           public
 //   agencias/{provincia}/{legajo}/comprobantes/{yyyy}/{mm}/{orderId}/{id}.{ext}  private
 //   agencias/{provincia}/{legajo}/boletas/{yyyy}/{mm}/{orderId}/{id}.{ext}       private
+//   agencias/{provincia}/{legajo}/liquidaciones/{yyyy}/{mm}/{fecha}-{id}.{ext}    private
 import { CreateBucketCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -67,6 +68,8 @@ export const keys = {
     `${agencyFolder(agency)}/empleados/${employeeId}/foto.${ext}`,
   receipt: (agency: AgencyRef, orderId: string, fileId: string, ext: string, at = new Date()) =>
     `${agencyFolder(agency)}/comprobantes/${yearMonth(at)}/${orderId}/${fileId}.${ext}`,
+  settlement: (agency: AgencyRef, issueDate: Date, fileId: string, ext: string) =>
+    `${agencyFolder(agency)}/liquidaciones/${yearMonth(issueDate)}/${issueDate.toISOString().slice(0, 10)}-${fileId}.${ext}`,
   ticket: (agency: AgencyRef, orderId: string, fileId: string, ext: string, at = new Date()) =>
     `${agencyFolder(agency)}/boletas/${yearMonth(at)}/${orderId}/${fileId}.${ext}`,
 };

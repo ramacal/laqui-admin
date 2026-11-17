@@ -14,6 +14,7 @@ import {
   voidMovement,
 } from "@/lib/finance";
 import { prisma } from "@/lib/prisma";
+import { attachTicket, createSettlement, voidSettlement } from "@/lib/settlement";
 
 export type FormState = { ok: boolean; message: string } | null;
 
@@ -63,6 +64,7 @@ const fundFields = (form: FormData) => ({
   cbuCvu: str(form, "cbuCvu"),
   alias: str(form, "alias"),
   merchantNumber: str(form, "merchantNumber"),
+  accountNumber: str(form, "accountNumber"),
   reference: str(form, "reference"),
   showToCustomers: form.get("showToCustomers") === "on",
   openingBalance: str(form, "openingBalance"),
@@ -140,5 +142,42 @@ export async function voidMovementAction(movementId: string) {
   if (!m) return;
   await requireFinanceAccess(await agencyOfFund(m.fundId));
   await voidMovement(movementId);
+  revalidatePath("/panel", "layout");
+}
+
+// ─── Daily Lotería settlement ticket ───────────────────────────
+
+export async function createSettlementAction(agencyId: string, _prev: FormState, form: FormData) {
+  return guarded(async () => {
+    const access = await requireFinanceAccess(agencyId);
+    const settlement = await createSettlement({
+      agencyId,
+      issueDate: str(form, "issueDate"),
+      dueDate: str(form, "dueDate"),
+      amount: str(form, "amount"),
+      direction: str(form, "direction") === "CREDIT" ? "CREDIT" : "DEBIT",
+      accountNumber: str(form, "accountNumber"),
+      notes: str(form, "notes"),
+      confirmAccountMismatch: form.get("confirmAccount") === "on",
+      userId: access.user.id,
+    });
+    const photo = form.get("ticket");
+    if (photo instanceof File && photo.size > 0) {
+      try {
+        await attachTicket(settlement.id, photo);
+      } catch (err) {
+        if (err instanceof FinanceValidationError) return `Ticket cargado, pero la foto no se guardó: ${err.message}`;
+        throw err;
+      }
+    }
+    return settlement.direction === "DEBIT" ? "Ticket cargado: débito registrado." : "Ticket cargado: crédito registrado.";
+  });
+}
+
+export async function voidSettlementAction(settlementId: string) {
+  const s = await prisma.lotterySettlement.findUnique({ where: { id: settlementId }, select: { agencyId: true } });
+  if (!s) return;
+  await requireFinanceAccess(s.agencyId);
+  await voidSettlement(settlementId);
   revalidatePath("/panel", "layout");
 }

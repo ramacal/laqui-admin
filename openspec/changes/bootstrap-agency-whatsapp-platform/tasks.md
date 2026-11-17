@@ -80,7 +80,7 @@
 - [x] 11.1 Payment methods per agency (one bank account; cash, wallets, terminals), defaults per agency
 - [x] 11.2 Movements (in/out, type, reference, origin), transfers between methods, voiding; calculated balances
 - [x] 11.3 Screens (validation scaffold): agency finances, owner totals in the panel
-- [ ] 11.4 Load movements from a Lotería ticket/settlement (pending: ticket format)
+- [x] 11.4 Daily Lotería settlement ticket (VTO, amount, debit/credit, account, photo) creating the bank movement on the due date
 - [ ] 11.5 Cash closings by employees as a movement source
 - [ ] 11.6 Attach receipts to movements (private storage)
 - [x] 11.7 Cash sessions per shift (morning/afternoon or single): open, record, close with difference adjustment, reopen; opening adjustment keeps cash balance = physical cash (logic only)

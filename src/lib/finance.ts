@@ -84,6 +84,7 @@ export type FundInput = {
   cbuCvu?: string | null;
   alias?: string | null;
   merchantNumber?: string | null;
+  accountNumber?: string | null;
   reference?: string | null;
   showToCustomers?: boolean;
   openingBalance?: string | number;
@@ -108,6 +109,7 @@ function cleanFund(input: FundInput) {
     cbuCvu: bankLike ? cbuCvu : null,
     alias: bankLike ? alias : null,
     merchantNumber: input.kind === "CARD_TERMINAL" ? opt(input.merchantNumber) : null,
+    accountNumber: input.kind === "BANK_ACCOUNT" ? opt(input.accountNumber) : null,
     reference: opt(input.reference),
     showToCustomers: input.kind === "CASH" ? false : Boolean(input.showToCustomers),
   };

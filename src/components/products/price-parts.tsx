@@ -2,8 +2,12 @@
 import { SimpleForm } from "@/components/schedule/simple-form";
 import type { FormState } from "@/app/panel/productos/actions";
 
-export const money = (amount: string | number) =>
-  `$${Number(amount).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+/** "$1.500" or "$1.234,50": cents only when there are any, always with two digits. */
+export const money = (amount: string | number) => {
+  const n = Number(amount);
+  const digits = Number.isInteger(n) ? 0 : 2;
+  return "$" + n.toLocaleString("es-AR", { minimumFractionDigits: digits, maximumFractionDigits: 2 });
+};
 
 const fmtDate = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });

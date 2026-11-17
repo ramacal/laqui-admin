@@ -4,6 +4,7 @@ import { agencyRole, canViewStaff, requireAccess } from "@/lib/access";
 import { FUND_KIND_LABEL, MOVEMENT_KIND_LABEL, agencyBalances, agencyMovements } from "@/lib/finance";
 import { prisma } from "@/lib/prisma";
 import { todayIn } from "@/lib/schedule";
+import { agencySettlements } from "@/lib/settlement";
 import { money } from "@/components/products/price-parts";
 import { EditFundForm, MovementForm, NewFundForm, TransferForm } from "@/components/finance/finance-forms";
 import {
@@ -41,6 +42,7 @@ export default async function AgencyFinancesPage({
   const activeFunds = funds.filter((f) => f.fund.active).map((f) => ({ id: f.fund.id, name: f.fund.name }));
   const filterFund = funds.find((f) => f.fund.id === medio)?.fund;
   const movements = await agencyMovements(agencyId, { fundId: filterFund?.id, take: 60 });
+  const { upcoming, missing } = await agencySettlements(agencyId);
 
   return (
     <main className="screen">
@@ -53,6 +55,23 @@ export default async function AgencyFinancesPage({
         <span className="small muted">Total en todos los medios, hoy</span>
         <strong className={`big-number ${total.isNegative() ? "error" : ""}`}>{money(total.toString())}</strong>
       </section>
+
+      <Link href={`/panel/agencias/${agencyId}/liquidaciones`} className="card row link-card">
+        <div className="stack-xs">
+          <strong>Liquidaciones de Lotería</strong>
+          <span className="small muted">
+            {upcoming.length
+              ? upcoming
+                  .map((u) => `${u.direction === "DEBIT" ? "Débito" : "Crédito"} de ${money(u.amount.toString())} el ${u.dueDate.toISOString().slice(8, 10)}/${u.dueDate.toISOString().slice(5, 7)}`)
+                  .join(" · ")
+              : "Cargá el ticket diario de la terminal"}
+            {missing.length ? ` · ${missing.length} día(s) sin ticket` : ""}
+          </span>
+        </div>
+        <span className="chevron" aria-hidden="true">
+          ›
+        </span>
+      </Link>
 
       <section className="stack-sm">
         <h2>Medios de cobro</h2>
@@ -92,6 +111,7 @@ export default async function AgencyFinancesPage({
                       cbuCvu: fund.cbuCvu,
                       alias: fund.alias,
                       merchantNumber: fund.merchantNumber,
+                      accountNumber: fund.accountNumber,
                       reference: fund.reference,
                       showToCustomers: fund.showToCustomers,
                       openingBalance: fund.openingBalance.toString(),
