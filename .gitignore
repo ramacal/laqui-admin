@@ -1,0 +1,16 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+.env.local
+.env.*.local
+package-lock.json
+
+
+/src/generated/prisma
+
+# Agent skill links created by `prisma init` (absolute symlinks to .agents/skills)
+.claude/skills/
+.windsurf/
+*.tsbuildinfo

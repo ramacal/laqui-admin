@@ -1,0 +1,53 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Next.js 16, React 19, TypeScript
+  Architecture: app router frontend + domain-driven backend + Prisma planned
+  Product: mobile-first guided betting flow per agency with WhatsApp handoff
+  Core domains: games, provinces, agencies, orders, receipts, quiniela calendar
+  Style: concise specs, Given/When/Then scenarios, RFC 2119 keywords
+
+strict_tdd: false
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected domains and user-facing impact
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Keep business language aligned with agencies and lottery operations
+  design:
+    - Document architecture decisions with rationale
+    - Include data flow notes for monthly quiniela imports when relevant
+  tasks:
+    - Group tasks by phase
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing project conventions
+    - Prioritize mobile-first frontend and explicit domain modeling
+  verify:
+    - Run tests and lint if infrastructure exists
+    - Compare implementation against every spec scenario
+  archive:
+    - Warn before merging destructive deltas
+
+testing:
+  strict_tdd: false
+  detected: "2026-04-07"
+
+  runner:
+    command: ""
+    framework: "not configured yet"
+
+  layers:
+    unit:
+      available: false
+      tool: ""
+    integration:
+      available: false
+      tool: ""
+    e2e:
+      available: false
+      tool: ""
+

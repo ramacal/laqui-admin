@@ -1,0 +1,9 @@
+phase: apply
+change: bootstrap-agency-whatsapp-platform
+artifacts:
+  proposal: true
+  specs: true
+  design: true
+  tasks: true
+  verify: false
+
