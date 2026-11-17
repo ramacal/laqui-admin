@@ -1,4 +1,6 @@
+import Image from "next/image";
 import { ROLE_LABEL, requireAccess } from "@/lib/access";
+import { publicUrl } from "@/lib/storage";
 import { SignOutButton } from "@/components/sign-out-button";
 
 export const metadata = { title: "Panel · Laqui" };
@@ -29,15 +31,34 @@ export default async function PanelPage() {
           <div className="stack-sm">
             <h2>Tus agencias</h2>
             <ul className="list">
-              {memberships.map((m) => (
-                <li key={m.id} className="card row">
-                  <div className="stack-xs">
-                    <strong>{m.agency.name}</strong>
-                    <span className="muted small">Legajo {m.agency.licenseNumber}</span>
-                  </div>
-                  <span className="badge">{ROLE_LABEL[m.role]}</span>
-                </li>
-              ))}
+              {memberships.map((m) => {
+                const logo = m.agency.assets[0];
+                return (
+                  <li key={m.id} className="card row">
+                    <div className="row agency">
+                      {logo ? (
+                        <Image src={publicUrl(logo.storageKey)} alt="" width={48} height={48} className="agency-logo" />
+                      ) : (
+                        <span
+                          className="agency-logo placeholder"
+                          style={{ background: m.agency.primaryColor ?? undefined }}
+                          aria-hidden="true"
+                        >
+                          {m.agency.name.charAt(0)}
+                        </span>
+                      )}
+                      <div className="stack-xs">
+                        <strong>{m.agency.name}</strong>
+                        <span className="muted small">
+                          Legajo {m.agency.province.code}-{m.agency.licenseNumber}
+                          {m.agency.city ? ` · ${m.agency.city}` : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="badge">{ROLE_LABEL[m.role]}</span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

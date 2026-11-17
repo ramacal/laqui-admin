@@ -196,14 +196,24 @@ model Agency {
   province        Province @relation(fields: [provinceId], references: [id])
   // Official file number ("número de legajo") assigned by the provincial lottery.
   licenseNumber   String   @db.VarChar(20)
-  cellphoneNumber String // WhatsApp destination, E.164 without "+", e.g. 5493415551234
+  // Legal holder of the license ("titular"), as registered with the provincial lottery.
+  licenseHolder   String?
+  // WhatsApp destination, E.164 without "+", e.g. 5491178490421.
+  // Null while onboarding: the agency cannot receive orders until it is set.
+  cellphoneNumber String?
+  email           String?
   active          Boolean  @default(true)
   timezone        String   @default("America/Argentina/Buenos_Aires")
 
-  // Branding
-  logoUrl      String? @db.VarChar(500)
+  // Storefront address (province = provinceId)
+  street       String?
+  streetNumber String? @db.VarChar(10)
+  city         String?
+
+  // Branding (logo files live in AgencyAsset)
   primaryColor String?
 
+  assets             AgencyAsset[]
   employees          AgencyEmployee[]
   games              AgencyGameAvailability[]
   scheduleRules      AgencyScheduleRule[]
@@ -216,6 +226,30 @@ model Agency {
 
   @@unique([provinceId, licenseNumber])
   @@index([provinceId])
+}
+
+enum AgencyAssetKind {
+  LOGO_SYMBOL // round symbol, PNG with transparency (social, documents)
+  LOGO_SYMBOL_VECTOR // symbol as SVG (print, any size)
+  LOGO_MAIN // symbol + agency name
+  PROFILE_PICTURE // 1080x1080 profile picture for Instagram/WhatsApp
+}
+
+// Branding files of an agency, stored in the public bucket under
+// agencias/{provincia}/{legajo}/logo/. One current file per kind.
+model AgencyAsset {
+  id         String          @id @default(cuid())
+  agencyId   String
+  agency     Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  kind       AgencyAssetKind
+  storageKey String          @db.VarChar(500)
+  mimeType   String
+  sizeBytes  Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agencyId, kind])
 }
 
 // Role inside one agency.
@@ -237,23 +271,27 @@ model AgencyEmployee {
   userId   String?
   user     User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  // Personal data. Only the name is required: records are often loaded
+  // before CUIL, phone or address are known.
   firstName String
   lastName  String
-  cuil      String  @db.VarChar(11) // 11 digits, no dashes; check digit validated in app
-  phone     String  @db.VarChar(20) // E.164 without "+"
-  email     String?
+  cuil      String?   @db.VarChar(11) // 11 digits, no dashes; check digit validated in app
+  phone     String?   @db.VarChar(20) // E.164 without "+"
+  email     String? // lowercase; matching Google email links the login
+  hiredAt   DateTime? @db.Date // fecha de ingreso
 
   // Home address ("domicilio")
-  street            String
-  streetNumber      String   @db.VarChar(10) // "1234" or "S/N"
-  floorApartment    String?  @db.VarChar(20) // "3° B"
-  city              String
-  postalCode        String?  @db.VarChar(10)
-  addressProvinceId String
-  addressProvince   Province @relation(fields: [addressProvinceId], references: [id])
+  street            String?
+  streetNumber      String?   @db.VarChar(10) // "1234" or "S/N"
+  floorApartment    String?   @db.VarChar(20) // "3° B"
+  city              String?
+  postalCode        String?   @db.VarChar(10)
+  addressProvinceId String?
+  addressProvince   Province? @relation(fields: [addressProvinceId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  uploadedTickets BetTicket[]
 
   @@unique([agencyId, cuil])
   @@unique([agencyId, userId]) // one membership per user per agency
@@ -436,6 +474,7 @@ model Order {
   draws     OrderQuinielaDraw[]
   lotteries OrderQuinielaLottery[]
   receipts  Receipt[]
+  tickets   BetTicket[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -518,16 +557,38 @@ enum ReceiptStatus {
   REJECTED
 }
 
+// Payment proof sent by the customer. Private bucket:
+// agencias/{provincia}/{legajo}/comprobantes/{yyyy}/{mm}/{orderId}/{id}.{ext}
 model Receipt {
   id         String        @id @default(cuid())
   orderId    String
   order      Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  storageKey String        @db.VarChar(500) // object key in file storage
+  storageKey String        @db.VarChar(500) // object key in the private bucket
   mimeType   String
   sizeBytes  Int
   status     ReceiptStatus @default(PENDING_REVIEW)
   reviewedAt DateTime?
   reviewNote String?       @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+}
+
+// TENTATIVE: photo of the printed lottery ticket ("boleta") that the agency sends
+// to the customer as proof of play. Private bucket:
+// agencias/{provincia}/{legajo}/boletas/{yyyy}/{mm}/{orderId}/{id}.{ext}
+model BetTicket {
+  id           String          @id @default(cuid())
+  orderId      String
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  storageKey   String          @db.VarChar(500)
+  mimeType     String
+  sizeBytes    Int
+  // Agency staff member who uploaded it
+  uploadedById String?
+  uploadedBy   AgencyEmployee? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  sentAt       DateTime? // when it was delivered to the customer
 
   createdAt DateTime @default(now())
 

@@ -49,3 +49,10 @@
 - [x] 7.4 Model users, platform admin profile, and agency roles (owner, admin, employee)
 - [ ] 7.5 Enforce role permissions in the application layer once auth is in place
 - [x] 7.6 Google SSO with Better Auth (login page, protected panel, link employees by email)
+
+## 8. File Storage
+
+- [x] 8.1 MinIO in docker-compose with public and private buckets
+- [x] 8.2 AgencyAsset and BetTicket models; per-agency storage layout
+- [x] 8.3 Storage module (keys, upload, public URL, signed URL)
+- [ ] 8.4 Import agency logos and show them in the panel (code ready; waiting for the logo files)

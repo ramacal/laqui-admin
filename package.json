@@ -12,13 +12,18 @@
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:up": "docker compose up -d --wait mysql",
+    "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:check": "tsx scripts/db-check.ts",
     "db:seed": "prisma db seed",
-    "user:admin": "tsx scripts/make-platform-admin.ts"
+    "user:admin": "tsx scripts/make-platform-admin.ts",
+    "agencies:import": "tsx scripts/import-agencies.ts",
+    "storage:init": "tsx scripts/storage-init.ts",
+    "logos:import": "tsx scripts/import-logos.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1161.0",
+    "@aws-sdk/s3-request-presigner": "3.1161.0",
     "@prisma/adapter-mariadb": "7.10.1",
     "@prisma/client": "7.10.1",
     "better-auth": "1.7.25",

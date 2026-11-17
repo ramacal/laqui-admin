@@ -14,7 +14,20 @@ export async function getAccess() {
     include: {
       memberships: {
         where: { active: true, agency: { active: true } },
-        include: { agency: { select: { id: true, slug: true, name: true, licenseNumber: true } } },
+        include: {
+          agency: {
+            select: {
+              id: true,
+              slug: true,
+              name: true,
+              licenseNumber: true,
+              city: true,
+              primaryColor: true,
+              province: { select: { code: true } },
+              assets: { where: { kind: "LOGO_SYMBOL" }, select: { storageKey: true } },
+            },
+          },
+        },
         orderBy: { agency: { name: "asc" } },
       },
     },

@@ -67,3 +67,8 @@ ehthumbs.db
 .windsurf/
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# ─── Real business data (personal data, never committed) ───
+prisma/data/*.local.json
+# Local copies of agency files (uploaded to storage with npm run logos:import)
+prisma/data/logos/

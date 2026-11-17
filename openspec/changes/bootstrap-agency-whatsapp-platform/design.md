@@ -153,3 +153,16 @@ Placeholders marked `TODO confirm` in the seed: Quini 6 price, Quiniela minimum 
 - **Provider:** Google only (`socialProviders.google`). Tables: `User`, `Session`, `Account`, `Verification`.
 - **Access linking:** on user creation and on every new session, unlinked `AgencyEmployee` rows whose `email` equals the Google email get `userId` set. Employee emails must be stored lowercase.
 - **Routes:** `/api/auth/[...all]` (Better Auth handler), `/login`, `/panel` (server-side session check via `requireAccess()` in `src/lib/access.ts`).
+
+## File Storage
+
+- **Where:** S3-compatible object storage. Local: SeaweedFS 4.51 in `docker-compose.yml` (MinIO no longer publishes Docker images). Production: S3, Cloudflare R2 or Supabase Storage (same code, different env vars). The database stores only the object key and metadata, never the file.
+- **Buckets:** `laqui-public` (logos, employee photos for social media; anonymous read) and `laqui-private` (payment receipts, ticket photos; signed URLs only).
+- **Layout (both buckets), one folder per agency by province and legajo:**
+  - `agencias/{provincia}/{legajo}/logo/{tipo}.{ext}`
+  - `agencias/{provincia}/{legajo}/empleados/{employeeId}/foto.{ext}`
+  - `agencias/{provincia}/{legajo}/comprobantes/{yyyy}/{mm}/{orderId}/{fileId}.{ext}` (private)
+  - `agencias/{provincia}/{legajo}/boletas/{yyyy}/{mm}/{orderId}/{fileId}.{ext}` (private)
+  - Agencies without a legajo yet use `pendiente-{agencyId}` instead of the legajo.
+- **Keys are stored as written:** if a legajo changes, existing files keep working; new uploads use the new folder.
+- **Models:** `AgencyAsset` (logo variants, replaces `Agency.logoUrl`), `Receipt` (customer payment proof), `BetTicket` (tentative: photo of the printed ticket sent to the customer).
