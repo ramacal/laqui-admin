@@ -5,31 +5,43 @@ import { priceOn } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
 import { todayIn } from "@/lib/schedule";
 import { PriceForm, PriceHistory, money } from "@/components/products/price-parts";
-import { addProvincePrice, deleteProvincePrice, setGameActive, setProvinceGameEnabled } from "../productos/actions";
+import { NewGameForm } from "@/components/products/new-game-form";
+import {
+  addGamePrice,
+  addProvincePrice,
+  createGame,
+  deleteGamePrice,
+  deleteProvincePrice,
+  resetProvincePrice,
+  setGameActive,
+  setProvinceGameEnabled,
+} from "../productos/actions";
 
 export const metadata = { title: "Juegos y precios · Laqui" };
 const TZ = "America/Argentina/Buenos_Aires";
 const KIND_LABEL = { QUINIELA: "Monto libre por renglón", NUMBER_PICK: "Números a precio fijo" } as const;
 
-// Platform admin: base products (official games) and their prices per province.
-export default async function GamesPage({ searchParams }: { searchParams: Promise<{ prov?: string }> }) {
+type Row = { id: string; amount: { toString(): string }; validFrom: Date; note: string | null };
+const toRows = (rows: Row[]) =>
+  rows.map((r) => ({ id: r.id, amount: r.amount.toString(), validFrom: r.validFrom.toISOString().slice(0, 10), note: r.note }));
+
+// Platform admin: official games with a national price (validity) that provinces may override.
+export default async function GamesPage() {
   const access = await requireAccess();
   if (!access.isPlatformAdmin) notFound();
-  const { prov } = await searchParams;
   const today = todayIn(TZ);
 
-  // Provinces with agencies first (the ones that matter today), then the rest.
   const provinces = await prisma.province.findMany({
     select: { id: true, code: true, name: true, _count: { select: { agencies: true } } },
     orderBy: { name: "asc" },
   });
   provinces.sort((a, b) => Number(b._count.agencies > 0) - Number(a._count.agencies > 0));
-  const province = provinces.find((p) => p.code === prov) ?? provinces[0];
 
   const games = await prisma.gameDefinition.findMany({
     include: {
       modalities: { orderBy: { sortOrder: "asc" } },
-      provinces: { where: { provinceId: province.id }, include: { prices: true } },
+      prices: true,
+      provinces: { include: { prices: true, province: { select: { name: true } } } },
     },
     orderBy: { name: "asc" },
   });
@@ -42,36 +54,18 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
       <div className="stack-xs">
         <h1>Juegos y precios</h1>
         <p className="muted small">
-          Productos base (juegos oficiales). Las reglas son iguales en todo el país; los precios se fijan por provincia y
-          con fecha de vigencia.
+          Cada juego tiene un precio nacional con fecha de vigencia. Una provincia puede tener precio propio: desde ahí
+          los cambios nacionales no la afectan, hasta que vuelva al precio nacional.
         </p>
       </div>
 
-      <nav className="tags" aria-label="Provincia">
-        {provinces.map((p) => (
-          <Link
-            key={p.id}
-            href={`?prov=${p.code}`}
-            className={`tag ${p.id === province.id ? "ok" : ""}`}
-            aria-current={p.id === province.id ? "page" : undefined}
-          >
-            {p.name}
-            {p._count.agencies ? ` (${p._count.agencies})` : ""}
-          </Link>
-        ))}
-      </nav>
-
       <ul className="list">
         {games.map((g) => {
-          const availability = g.provinces[0];
-          const enabled = Boolean(availability?.enabled);
-          const rows = (availability?.prices ?? []).map((p) => ({
-            id: p.id,
-            amount: p.amount.toString(),
-            validFrom: p.validFrom.toISOString().slice(0, 10),
-            note: p.note,
-          }));
-          const { current } = priceOn(availability?.prices ?? [], today);
+          const national = priceOn(g.prices, today);
+          const byProvince = new Map(g.provinces.map((p) => [p.provinceId, p]));
+          const custom = g.provinces.filter((p) => p.enabled && p.customPrice);
+          const unit = g.kind === "QUINIELA" ? " mínimo por renglón" : "";
+          const enabledWithoutOwn = provinces.filter((p) => byProvince.get(p.id)?.enabled && !byProvince.get(p.id)?.customPrice);
           return (
             <li key={g.id} className="card stack-sm">
               <div className="row">
@@ -83,9 +77,7 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
                       ? ` · ${g.pickCount} números del ${String(g.minNumber).padStart(2, "0")} al ${g.maxNumber}${g.extraMax != null ? ` + plus ${g.extraMin}–${g.extraMax}` : ""}`
                       : ` · hasta ${g.maxDigits} cifras`}
                   </span>
-                  {g.modalities.length > 0 && (
-                    <span className="muted small">{g.modalities.map((m) => m.name).join(" · ")}</span>
-                  )}
+                  {g.modalities.length > 0 && <span className="muted small">{g.modalities.map((m) => m.name).join(" · ")}</span>}
                 </div>
                 <form action={setGameActive.bind(null, g.id, !g.active)}>
                   <button type="submit" className={`btn btn-sm ${g.active ? "btn-secondary" : "btn-primary"}`}>
@@ -95,36 +87,126 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
               </div>
               {!g.active && <p className="warn small">Pausado: no se ofrece en ninguna agencia.</p>}
 
-              <div className="row">
+              <div className="stack-xs">
+                <h3 className="small">Precio nacional</h3>
                 <span className="small">
-                  En {province.name}:{" "}
-                  <strong>{enabled ? (current ? `${money(current.amount)} vigente` : "sin precio vigente") : "no se ofrece"}</strong>
-                  {g.kind === "QUINIELA" && enabled && current ? " (mínimo por renglón)" : ""}
+                  {national.current ? <strong>{money(national.current.amount)}</strong> : <span className="warn">sin precio</span>}
+                  {unit}
+                  {national.next ? (
+                    <span className="muted">
+                      {" "}
+                      · {money(national.next.amount)} desde {national.next.validFrom}
+                    </span>
+                  ) : null}
                 </span>
-                <form action={setProvinceGameEnabled.bind(null, province.id, g.id, !enabled)}>
-                  <button type="submit" className="btn btn-secondary btn-sm">
-                    {enabled ? "Quitar de la provincia" : "Ofrecer en la provincia"}
-                  </button>
-                </form>
-              </div>
-
-              {enabled && (
                 <details>
-                  <summary>Precios en {province.name}</summary>
+                  <summary className="small">Historial y cambios de precio</summary>
                   <div className="stack-sm spaced">
-                    <PriceHistory rows={rows} today={today} deleteAction={deleteProvincePrice} />
+                    <PriceHistory rows={toRows(g.prices)} today={today} deleteAction={deleteGamePrice} />
                     <PriceForm
-                      action={addProvincePrice.bind(null, province.id, g.id)}
+                      action={addGamePrice.bind(null, g.id)}
                       today={today}
-                      amountLabel={g.kind === "QUINIELA" ? "Mínimo por renglón" : "Precio"}
+                      amountLabel={g.kind === "QUINIELA" ? "Mínimo por renglón" : "Precio nacional"}
                     />
                   </div>
                 </details>
-              )}
+              </div>
+
+              <div className="stack-xs">
+                <h3 className="small">Se ofrece en</h3>
+                <div className="tags">
+                  {provinces.map((p) => {
+                    const on = Boolean(byProvince.get(p.id)?.enabled);
+                    return (
+                      <form key={p.id} action={setProvinceGameEnabled.bind(null, p.id, g.id, !on)}>
+                        <button
+                          type="submit"
+                          className={`chip ${on ? "on" : ""}`}
+                          aria-pressed={on}
+                          aria-label={`${p.name}: ${on ? "se ofrece" : "no se ofrece"}`}
+                        >
+                          {on ? "✓ " : ""}
+                          {p.name}
+                        </button>
+                      </form>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="stack-xs">
+                <h3 className="small">Provincias con precio propio</h3>
+                {custom.length === 0 ? (
+                  <p className="muted small">Ninguna: todas usan el precio nacional.</p>
+                ) : (
+                  <ul className="list plain">
+                    {custom.map((pg) => {
+                      const own = priceOn(pg.prices, today);
+                      return (
+                        <li key={pg.provinceId} className="stack-xs exception-row">
+                          <div className="row">
+                            <span className="small">
+                              <strong>{pg.province.name}</strong>:{" "}
+                              {own.current ? money(own.current.amount) : <span className="warn">sin precio vigente</span>}
+                              {own.next ? <span className="muted"> · {money(own.next.amount)} desde {own.next.validFrom}</span> : null}
+                            </span>
+                            <form action={resetProvincePrice.bind(null, pg.provinceId, g.id)}>
+                              <button type="submit" className="btn btn-secondary btn-sm">
+                                Volver al nacional
+                              </button>
+                            </form>
+                          </div>
+                          <details>
+                            <summary className="small">Historial y cambios en {pg.province.name}</summary>
+                            <div className="stack-sm spaced">
+                              <PriceHistory rows={toRows(pg.prices)} today={today} deleteAction={deleteProvincePrice} />
+                              <PriceForm action={addProvincePrice.bind(null, g.id)} today={today}>
+                                <input type="hidden" name="provinceId" value={pg.provinceId} />
+                              </PriceForm>
+                            </div>
+                          </details>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {enabledWithoutOwn.length > 0 && (
+                  <details>
+                    <summary className="small">Poner precio propio a una provincia</summary>
+                    <div className="spaced">
+                      <PriceForm action={addProvincePrice.bind(null, g.id)} today={today}>
+                        <label className="field">
+                          <span className="small muted">Provincia</span>
+                          <select name="provinceId" className="input" required defaultValue="">
+                            <option value="" disabled>
+                              Elegí una provincia
+                            </option>
+                            {enabledWithoutOwn.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </PriceForm>
+                    </div>
+                  </details>
+                )}
+              </div>
             </li>
           );
         })}
       </ul>
+
+      <section className="card stack-sm" id="nuevo">
+        <h2>Nuevo juego oficial</h2>
+        <p className="muted small">Por ejemplo Brinco, Poceada o Telekino. Queda activo y a la venta en las provincias que marques.</p>
+        <NewGameForm
+          action={createGame}
+          today={today}
+          provinces={provinces.map((p) => ({ id: p.id, name: p.name, agencies: p._count.agencies }))}
+        />
+      </section>
     </main>
   );
 }

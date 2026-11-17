@@ -144,12 +144,17 @@ const minusMinutes = (hhmm: string, mins: number) => {
 // ─── Seed steps ────────────────────────────────────────────────
 
 async function seedGames() {
-  for (const { modalities, defaultPrice: _price, ...game } of GAMES) {
+  for (const { modalities, defaultPrice, ...game } of GAMES) {
     const saved = await prisma.gameDefinition.upsert({
       where: { code: game.code },
       create: game,
       update: game,
     });
+    // Initial national price, only if the game has none yet (edits in the panel are kept).
+    if (!(await prisma.gamePrice.count({ where: { gameId: saved.id } })))
+      await prisma.gamePrice.create({
+        data: { gameId: saved.id, amount: defaultPrice, validFrom: new Date("2026-01-01T00:00:00Z"), note: "Precio inicial" },
+      });
     for (const [i, mod] of modalities.entries()) {
       await prisma.gameModality.upsert({
         where: { gameId_code: { gameId: saved.id, code: mod.code } },
@@ -179,13 +184,6 @@ async function seedDemoProvince() {
       create: { provinceId: province.id, gameId: game.id },
       update: {},
     });
-    // Initial province price, only if the game has no price there yet.
-    const price = GAMES.find((g) => g.code === game.code)?.defaultPrice;
-    const hasPrice = await prisma.provinceGamePrice.count({ where: { provinceId: province.id, gameId: game.id } });
-    if (price && !hasPrice)
-      await prisma.provinceGamePrice.create({
-        data: { provinceId: province.id, gameId: game.id, amount: price, validFrom: new Date("2026-01-01T00:00:00Z"), note: "Precio inicial" },
-      });
   }
 
   for (const [i, code] of DEMO_LOTTERIES.entries()) {

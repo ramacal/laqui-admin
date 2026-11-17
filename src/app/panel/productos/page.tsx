@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAccess } from "@/lib/access";
-import { priceOn } from "@/lib/catalog";
+import { effectivePriceRows, priceOn } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
 import { agenciesOwnedBy, todayIn } from "@/lib/schedule";
 import { SimpleForm } from "@/components/schedule/simple-form";
@@ -31,7 +31,7 @@ export default async function OwnerProductsPage() {
   const provinceIds = [...new Set(agencyDetails.map((a) => a.provinceId))];
   const provinceGames = await prisma.provinceGameAvailability.findMany({
     where: { provinceId: { in: provinceIds }, enabled: true },
-    include: { game: { select: { id: true, name: true, kind: true, active: true } }, prices: true },
+    include: { game: { select: { id: true, name: true, kind: true, active: true, prices: true } }, prices: true },
   });
   const officialGames = [...new Map(provinceGames.map((pg) => [pg.game.id, pg.game])).values()].sort((a, b) =>
     a.name.localeCompare(b.name),
@@ -65,7 +65,7 @@ export default async function OwnerProductsPage() {
                     <span className="small muted">
                       {[...new Set(agencyDetails.map((a) => {
                         const pg = provinceGames.find((x) => x.gameId === game.id && x.provinceId === a.provinceId);
-                        const current = pg ? priceOn(pg.prices, today).current : null;
+                        const current = pg ? priceOn(effectivePriceRows(pg, pg.game.prices), today).current : null;
                         return current ? money(current.amount) : "sin precio";
                       }))].join(" / ")}
                       {game.kind === "QUINIELA" ? " mínimo por renglón" : ""}

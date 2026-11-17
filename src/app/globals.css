@@ -523,3 +523,34 @@ nav.tags .tag {
   color: #085041;
   font-weight: 600;
 }
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+.chip-check input {
+  position: absolute;
+  opacity: 0;
+}
+.chip-check span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  border: 1px solid #c8c7bf;
+  background: #fff;
+  color: #5f5e5a;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.chip-check input:checked + span {
+  border-color: #0f6e56;
+  background: #e1f5ee;
+  color: #085041;
+  font-weight: 600;
+}
+.chip-check input:focus-visible + span {
+  outline: 2px solid #000096;
+  outline-offset: 1px;
+}

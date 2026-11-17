@@ -5,7 +5,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { agencyRole, canEditAgencyHours, getAccess, type Access } from "@/lib/access";
-import { CatalogValidationError, setOwnerProductPrice, setProvinceGamePrice } from "@/lib/catalog";
+import {
+  CatalogValidationError,
+  resetProvinceGamePrice,
+  setGamePrice,
+  setOwnerProductPrice,
+  setProvinceGamePrice,
+} from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
 import { agenciesOwnedBy, dateValue, todayIn } from "@/lib/schedule";
 
@@ -66,18 +72,41 @@ export async function setProvinceGameEnabled(provinceId: string, gameId: string,
   revalidatePath("/panel", "layout");
 }
 
-export async function addProvincePrice(provinceId: string, gameId: string, _prev: FormState, form: FormData) {
+/** National price of a game (applies to every province without a price of its own). */
+export async function addGamePrice(gameId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
     await requirePlatformAdmin();
-    await prisma.provinceGameAvailability.upsert({
-      where: { provinceId_gameId: { provinceId, gameId } },
-      create: { provinceId, gameId },
-      update: {},
-    });
     const validFrom = str(form, "validFrom");
-    await setProvinceGamePrice(provinceId, gameId, str(form, "amount"), validFrom, str(form, "note") || undefined);
-    return validFrom > todayIn(TZ) ? `Aumento programado desde ${validFrom}.` : "Precio guardado.";
+    await setGamePrice(gameId, str(form, "amount"), validFrom, str(form, "note") || undefined);
+    return validFrom > todayIn(TZ) ? `Aumento nacional programado desde ${validFrom}.` : "Precio nacional guardado.";
   });
+}
+
+export async function deleteGamePrice(priceId: string) {
+  await requirePlatformAdmin();
+  await prisma.gamePrice.deleteMany({ where: { id: priceId, validFrom: { gt: dateValue(todayIn(TZ)) } } });
+  revalidatePath("/panel", "layout");
+}
+
+/** Own price for one province (it stops following the national price). Province picked in the form. */
+export async function addProvincePrice(gameId: string, _prev: FormState, form: FormData) {
+  return guarded(async () => {
+    await requirePlatformAdmin();
+    const provinceId = str(form, "provinceId");
+    const province = await prisma.province.findUnique({ where: { id: provinceId } });
+    if (!province) throw new CatalogValidationError("Elegí una provincia.");
+    const validFrom = str(form, "validFrom");
+    await setProvinceGamePrice(provinceId, gameId, str(form, "amount"), validFrom, str(form, "note") || undefined, todayIn(TZ));
+    return validFrom > todayIn(TZ)
+      ? `${province.name}: precio propio programado desde ${validFrom}.`
+      : `${province.name} ahora tiene precio propio.`;
+  });
+}
+
+export async function resetProvincePrice(provinceId: string, gameId: string) {
+  await requirePlatformAdmin();
+  await resetProvinceGamePrice(provinceId, gameId);
+  revalidatePath("/panel", "layout");
 }
 
 /** Only scheduled (future) prices can be deleted: past prices are history. */
@@ -197,4 +226,84 @@ export async function setAgencyGameVisible(agencyId: string, gameId: string, vis
     update: { visible },
   });
   revalidatePath("/panel", "layout");
+}
+
+// ─── New official game (platform admin) ────────────────────────
+
+const intIn = (form: FormData, key: string, min: number, max: number, label: string) => {
+  const raw = str(form, key);
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n) || n < min || n > max)
+    throw new CatalogValidationError(`${label}: un número entero entre ${min} y ${max}.`);
+  return n;
+};
+
+export async function createGame(_prev: FormState, form: FormData): Promise<FormState> {
+  return guarded(async () => {
+    await requirePlatformAdmin();
+    const name = str(form, "name");
+    if (name.length < 2) throw new CatalogValidationError("Poné el nombre del juego.");
+    const code = name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+    if (await prisma.gameDefinition.findUnique({ where: { code } }))
+      throw new CatalogValidationError(`Ya existe un juego con ese nombre (${code}).`);
+
+    const kind = str(form, "kind") === "QUINIELA" ? "QUINIELA" : "NUMBER_PICK";
+    let rules: Record<string, number | null> = {};
+    if (kind === "NUMBER_PICK") {
+      const minNumber = intIn(form, "minNumber", 0, 99, "Número mínimo");
+      const maxNumber = intIn(form, "maxNumber", 1, 999, "Número máximo");
+      if (maxNumber <= minNumber) throw new CatalogValidationError("El número máximo tiene que ser mayor al mínimo.");
+      const pickCount = intIn(form, "pickCount", 1, 20, "Cantidad de números");
+      if (pickCount > maxNumber - minNumber + 1) throw new CatalogValidationError("No hay tantos números en el rango.");
+      const hasExtra = form.get("hasExtra") === "on";
+      rules = {
+        pickCount,
+        minNumber,
+        maxNumber,
+        extraMin: hasExtra ? intIn(form, "extraMin", 0, 99, "Número extra mínimo") : null,
+        extraMax: hasExtra ? intIn(form, "extraMax", 1, 99, "Número extra máximo") : null,
+      };
+      if (hasExtra && rules.extraMax! <= rules.extraMin!)
+        throw new CatalogValidationError("El número extra máximo tiene que ser mayor al mínimo.");
+    } else {
+      rules = { maxDigits: intIn(form, "maxDigits", 1, 6, "Cifras máximas") };
+    }
+
+    const modalities = str(form, "modalities")
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+    const provinceIds = form.getAll("provinceId").map(String);
+    const amount = str(form, "amount");
+    const validFrom = str(form, "validFrom") || todayIn(TZ);
+
+    const game = await prisma.gameDefinition.create({
+      data: {
+        code,
+        name,
+        kind,
+        ...rules,
+        modalities: {
+          create: modalities.map((m, i) => ({
+            code: m.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
+            name: m,
+            sortOrder: i,
+          })),
+        },
+        provinces: { create: provinceIds.map((provinceId) => ({ provinceId })) },
+      },
+    });
+    try {
+      await setGamePrice(game.id, amount, validFrom, "Precio inicial");
+    } catch (err) {
+      await prisma.gameDefinition.delete({ where: { id: game.id } }); // no game without a valid price
+      throw err;
+    }
+    return `«${name}» creado${provinceIds.length ? ` y ofrecido en ${provinceIds.length} provincia(s)` : ""}.`;
+  });
 }

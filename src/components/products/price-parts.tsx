@@ -58,13 +58,16 @@ export function PriceForm({
   action,
   today,
   amountLabel = "Precio",
+  children,
 }: {
   action: (prev: FormState, form: FormData) => Promise<FormState>;
   today: string;
   amountLabel?: string;
+  children?: React.ReactNode; // extra fields (e.g. a province picker or hidden inputs)
 }) {
   return (
     <SimpleForm action={action} submitLabel="Guardar precio">
+      {children}
       <div className="grid-2">
         <label className="field">
           <span className="small muted">{amountLabel} ($)</span>

@@ -26,7 +26,7 @@ enum GameKind {
 }
 
 // Base product = official lottery game (spec global-game-catalog). Rules are global;
-// prices are per province with validity (ProvinceGamePrice).
+// national price with validity (GamePrice), optionally overridden per province (ProvinceGamePrice).
 model GameDefinition {
   id     String   @id @default(cuid())
   code   String   @unique // "QUINIELA" | "QUINI_6" | "LOTO_PLUS"
@@ -45,12 +45,28 @@ model GameDefinition {
   maxDigits Int? // up to 4 digits per bet number
 
   modalities GameModality[]
+  prices     GamePrice[]
   provinces  ProvinceGameAvailability[]
   agencies   AgencyGameAvailability[]
   orders     Order[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// National price history of a base product. In effect: the latest validFrom <= today.
+// Amount = ticket price (number pick) or minimum per bet line (Quiniela).
+model GamePrice {
+  id        String         @id @default(cuid())
+  gameId    String
+  game      GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  amount    Decimal        @db.Decimal(12, 2)
+  validFrom DateTime       @db.Date
+  note      String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([gameId, validFrom])
 }
 
 // Sub-draws a ticket participates in (Loto Plus: Tradicional, Match, Desquite, Sale o Sale).
@@ -86,19 +102,21 @@ model Province {
 }
 
 model ProvinceGameAvailability {
-  provinceId String
-  province   Province       @relation(fields: [provinceId], references: [id], onDelete: Cascade)
-  gameId     String
-  game       GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  enabled    Boolean        @default(true)
+  provinceId  String
+  province    Province       @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  gameId      String
+  game        GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  enabled     Boolean        @default(true)
+  // false: uses the national price (GamePrice). true: own price history (ProvinceGamePrice).
+  customPrice Boolean        @default(false)
 
   prices ProvinceGamePrice[]
 
   @@id([provinceId, gameId])
 }
 
-// Price history of a base product in a province. In effect: the latest validFrom <= today.
-// Amount = ticket price (number pick) or minimum per bet line (Quiniela).
+// Province's own price history (only when ProvinceGameAvailability.customPrice). In effect:
+// the latest validFrom <= today. Amount = ticket price or Quiniela minimum per bet line.
 model ProvinceGamePrice {
   id           String                   @id @default(cuid())
   provinceId   String
