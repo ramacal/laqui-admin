@@ -1,15 +1,69 @@
+# ─── Dependencies ───
 node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ─── Next.js / build output ───
 .next/
+out/
+build/
 dist/
-coverage/
-.env
-.env.local
-.env.*.local
+next-env.d.ts
+*.tsbuildinfo
 
-
+# ─── Prisma generated client ───
 /src/generated/prisma
 
-# Agent skill links created by `prisma init` (absolute symlinks to .agents/skills)
+# ─── Environment / secrets ───
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ─── Testing ───
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# ─── Logs ───
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── Caches ───
+.eslintcache
+.turbo/
+.cache/
+
+# ─── Deploy platforms ───
+.vercel/
+
+# ─── OS files ───
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ─── Editors ───
+.idea/
+*.swp
+*.swo
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# ─── Agent tooling ───
+# Skill links created by `prisma init` (absolute symlinks to .agents/skills)
 .claude/skills/
 .windsurf/
-*.tsbuildinfo
+# Personal Claude Code settings
+.claude/settings.local.json
