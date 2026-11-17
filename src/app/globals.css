@@ -186,3 +186,117 @@ code {
   font-weight: 700;
   font-size: 1.2rem;
 }
+
+.link-card {
+  transition: border-color 0.15s, background 0.15s;
+}
+.link-card:hover {
+  border-color: #b4b2a9;
+  background: #fcfcfa;
+}
+.agency-meta {
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.chevron {
+  color: #888780;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.back {
+  color: #5f5e5a;
+  font-size: 0.9rem;
+  padding-top: 0.5rem;
+}
+.agency-logo.lg {
+  width: 64px;
+  height: 64px;
+}
+.badge.inline {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  vertical-align: middle;
+}
+.badge.neutral {
+  background: #f1efe8;
+  color: #444441;
+}
+.warn {
+  color: #854f0b;
+}
+.facts {
+  margin: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+.facts dt {
+  font-size: 0.8rem;
+  color: #5f5e5a;
+  margin-bottom: 0.15rem;
+}
+.facts dd {
+  margin: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.list.plain {
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.tag {
+  font-size: 0.78rem;
+  background: #f1efe8;
+  color: #444441;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+}
+.tag.ok {
+  background: #e1f5ee;
+  color: #085041;
+}
+.note {
+  background: #faeeda;
+  color: #633806;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  line-height: 1.4;
+}
+.inline-form {
+  display: flex;
+  gap: 0.5rem;
+}
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 0.85rem;
+  border: 1px solid #c8c7bf;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 16px; /* avoids zoom on iOS */
+  background: #fff;
+}
+.input:focus {
+  outline: 2px solid #000096;
+  outline-offset: 1px;
+}
+.btn-primary {
+  background: #000096;
+  color: #fff;
+  border: none;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #0c0c7a;
+}
+.ok-text {
+  color: #085041;
+}

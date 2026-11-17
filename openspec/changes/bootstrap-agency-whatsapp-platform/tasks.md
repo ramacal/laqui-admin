@@ -56,3 +56,6 @@
 - [x] 8.2 AgencyAsset and BetTicket models; per-agency storage layout
 - [x] 8.3 Storage module (keys, upload, public URL, signed URL)
 - [ ] 8.4 Import agency logos and show them in the panel (code ready; waiting for the logo files)
+- [x] 7.7 Owner is the license holder; platform admin assigns the owner email
+- [x] 7.8 Employee exit date (leftAt >= hiredAt), job, shift, notes and social media consent
+- [x] 7.9 Agency detail page with staff (owners/admins only)

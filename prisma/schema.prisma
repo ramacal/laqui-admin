@@ -196,8 +196,7 @@ model Agency {
   province        Province @relation(fields: [provinceId], references: [id])
   // Official file number ("número de legajo") assigned by the provincial lottery.
   licenseNumber   String   @db.VarChar(20)
-  // Legal holder of the license ("titular"), as registered with the provincial lottery.
-  licenseHolder   String?
+  // The license holder ("titular") is the agency's OWNER in AgencyEmployee.
   // WhatsApp destination, E.164 without "+", e.g. 5491178490421.
   // Null while onboarding: the agency cannot receive orders until it is set.
   cellphoneNumber String?
@@ -259,8 +258,15 @@ enum EmployeeRole {
   EMPLOYEE // empleado: orders and receipts only
 }
 
+enum EmployeeShift {
+  MORNING // mañana
+  AFTERNOON // tarde
+  FULL_DAY // jornada completa
+  ROTATING // rotativo
+}
+
 // People working at an agency. A person working at two agencies has one row per agency.
-// Former employees are deactivated (active = false), never deleted.
+// Former employees are deactivated (active = false + leftAt), never deleted.
 // `userId` is optional: an employee can be data-only, without login.
 model AgencyEmployee {
   id       String       @id @default(cuid())
@@ -279,6 +285,18 @@ model AgencyEmployee {
   phone     String?   @db.VarChar(20) // E.164 without "+"
   email     String? // lowercase; matching Google email links the login
   hiredAt   DateTime? @db.Date // fecha de ingreso
+  leftAt    DateTime? @db.Date // fecha de egreso; set when deactivated (>= hiredAt)
+
+  // Work
+  jobTitle String? // puesto, e.g. "Cajera" (not the access role)
+  shift    EmployeeShift? // turno
+  notes    String?        @db.Text
+
+  // Social media (only with signed consent)
+  publicName         String? // nombre para redes, e.g. "Marisa"
+  socialMediaConsent Boolean   @default(false) // permiso firmado para salir en redes
+  consentAt          DateTime? @db.Date
+  photoKey           String?   @db.VarChar(500) // public bucket: agencias/{prov}/{legajo}/empleados/{id}/foto.{ext}
 
   // Home address ("domicilio")
   street            String?

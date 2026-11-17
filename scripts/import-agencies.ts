@@ -7,7 +7,17 @@ import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/prisma";
 
-type EmployeeInput = { firstName: string; lastName: string; hiredAt?: string | null; email?: string | null };
+type EmployeeInput = {
+  firstName: string;
+  lastName: string;
+  hiredAt?: string | null;
+  leftAt?: string | null;
+  email?: string | null;
+  jobTitle?: string | null;
+  notes?: string | null;
+  publicName?: string | null;
+  socialMediaConsent?: boolean;
+};
 type AgencyInput = {
   code: string;
   slug: string;
@@ -66,7 +76,6 @@ async function main() {
       name: a.name,
       provinceId: province.id,
       licenseNumber: a.licenseNumber,
-      licenseHolder: a.licenseHolder ?? null,
       street: a.street ?? null,
       streetNumber: a.streetNumber ?? null,
       city: a.city ?? null,
@@ -88,18 +97,29 @@ async function main() {
       });
     }
 
-    // Owner account (linked to the Google user if it already signed in).
-    const ownerRow = await prisma.agencyEmployee.findFirst({ where: { agencyId: agency.id, email: ownerEmail } });
-    const ownerData = {
-      role: "OWNER" as const,
-      active: true,
-      firstName: data.ownerFirstName,
-      lastName: data.ownerLastName,
-      email: ownerEmail,
-      userId: owner?.id ?? null,
-    };
-    if (ownerRow) await prisma.agencyEmployee.update({ where: { id: ownerRow.id }, data: ownerData });
-    else await prisma.agencyEmployee.create({ data: { agencyId: agency.id, ...ownerData } });
+    // Owner = license holder ("titular", "Apellido, Nombres"). The file's ownerEmail is only a
+    // default for new owners: an email assigned later by the platform admin is never overwritten.
+    const holder = a.licenseHolder?.includes(",")
+      ? { lastName: a.licenseHolder.split(",")[0].trim(), firstName: a.licenseHolder.split(",").slice(1).join(",").trim() }
+      : null;
+    const ownerRow = await prisma.agencyEmployee.findFirst({ where: { agencyId: agency.id, role: "OWNER" } });
+    if (ownerRow) {
+      await prisma.agencyEmployee.update({
+        where: { id: ownerRow.id },
+        data: { active: true, ...(holder ?? {}) },
+      });
+    } else {
+      await prisma.agencyEmployee.create({
+        data: {
+          agencyId: agency.id,
+          role: "OWNER",
+          firstName: holder?.firstName ?? data.ownerFirstName,
+          lastName: holder?.lastName ?? data.ownerLastName,
+          email: ownerEmail,
+          userId: owner?.id ?? null,
+        },
+      });
+    }
 
     for (const e of a.employees) {
       const existing = await prisma.agencyEmployee.findFirst({
@@ -107,9 +127,14 @@ async function main() {
       });
       const empData = {
         role: "EMPLOYEE" as const,
-        active: true,
+        active: !e.leftAt,
         hiredAt: toDate(e.hiredAt),
+        leftAt: toDate(e.leftAt),
         email: e.email?.toLowerCase() ?? null,
+        jobTitle: e.jobTitle ?? null,
+        notes: e.notes ?? null,
+        publicName: e.publicName ?? null,
+        socialMediaConsent: e.socialMediaConsent ?? false,
       };
       if (existing) await prisma.agencyEmployee.update({ where: { id: existing.id }, data: empData });
       else

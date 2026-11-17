@@ -61,3 +61,12 @@ export function canManageStaff(actor: EmployeeRole, target: EmployeeRole) {
   if (actor === "ADMIN") return target !== "OWNER";
   return false;
 }
+
+/** Role of the signed-in user in one agency. Platform admins act as owners everywhere. */
+export function agencyRole(access: Access, agencyId: string): EmployeeRole | null {
+  if (access.isPlatformAdmin) return "OWNER";
+  return access.memberships.find((m) => m.agency.id === agencyId)?.role ?? null;
+}
+
+/** Staff list is visible to owners and agency admins, not to plain employees. */
+export const canViewStaff = (role: EmployeeRole | null) => role === "OWNER" || role === "ADMIN";
