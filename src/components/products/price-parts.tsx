@@ -2,6 +2,12 @@
 import { SimpleForm } from "@/components/schedule/simple-form";
 import type { FormState } from "@/app/panel/productos/actions";
 
+export const KIND_LABEL = {
+  QUINIELA: "Monto libre por renglón",
+  NUMBER_PICK: "Números a precio fijo",
+  UNIT: "Venta por unidad",
+} as const;
+
 /** "$1.500" or "$1.234,50": cents only when there are any, always with two digits. */
 export const money = (amount: string | number) => {
   const n = Number(amount);

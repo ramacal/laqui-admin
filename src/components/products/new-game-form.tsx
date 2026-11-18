@@ -44,7 +44,7 @@ export function NewGameForm({
             checked={!physical}
             onChange={() => setSaleMode("MACHINE")}
           />
-          <span>Máquina (terminal)</span>
+          <span>Online</span>
         </label>
         <label>
           <input

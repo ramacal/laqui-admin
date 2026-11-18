@@ -42,6 +42,8 @@ model GameDefinition {
   kind     GameKind
   saleMode SaleMode @default(MACHINE)
   active   Boolean  @default(true)
+  // Picture shown in the panel and the public betting flow (public bucket: juegos/{code}/...).
+  imageKey String?  @db.VarChar(500)
 
   // NUMBER_PICK rules (null for Quiniela)
   pickCount Int?
@@ -104,28 +106,35 @@ model Province {
   // New agencies get their single bank account with this bank.
   settlementBank String?
 
-  games     ProvinceGameAvailability[]
-  lotteries ProvinceLotteryAvailability[]
-  programs  ProvinceQuinielaMonthlyProgram[]
-  agencies  Agency[]
-  residents AgencyEmployee[] // employees whose home address is in this province
+  games               ProvinceGameAvailability[]
+  lotteries           ProvinceLotteryAvailability[]
+  programs            ProvinceQuinielaMonthlyProgram[]
+  quinielaRules       ProvinceQuinielaDrawRule[]
+  quinielaExceptions  ProvinceQuinielaException[]
+  quinielaDrawNumbers ProvinceQuinielaDrawNumber[]
+  agencies            Agency[]
+  residents           AgencyEmployee[] // employees whose home address is in this province
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  scheduledJobs ScheduledJob[]
 }
 
 model ProvinceGameAvailability {
-  provinceId    String
-  province      Province       @relation(fields: [provinceId], references: [id], onDelete: Cascade)
-  gameId        String
-  game          GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  enabled       Boolean        @default(true)
+  provinceId      String
+  province        Province       @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  gameId          String
+  game            GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  enabled         Boolean        @default(true)
   // false: uses the national price (GamePrice). true: own price history (ProvinceGamePrice).
-  customPrice   Boolean        @default(false)
+  customPrice     Boolean        @default(false)
   // Draw games: maximum per bet (Quiniela: per lottery, "$5.000 por C/Lotería") and how many
-  // minutes before the draw the terminals stop taking bets (sets the draws' closeTime).
-  maxBetAmount  Decimal?       @db.Decimal(12, 2)
-  cutoffMinutes Int?
+  // minutes before the draw the terminals stop taking bets (the draws' closeTime).
+  maxBetAmount    Decimal?       @db.Decimal(12, 2)
+  cutoffMinutes   Int?
+  // Quiniela: prizes can be claimed until the draw date + these days, moved to the next
+  // business day (Lotería de la Provincia: 10).
+  prizeExpiryDays Int?
 
   prices ProvinceGamePrice[]
 
@@ -155,9 +164,13 @@ model Lottery {
   name   String
   active Boolean @default(true)
 
-  provinces   ProvinceLotteryAvailability[]
-  orderSlices OrderQuinielaLottery[]
-  draws       ProvinceQuinielaDrawLottery[]
+  provinces      ProvinceLotteryAvailability[]
+  orderSlices    OrderQuinielaLottery[]
+  drawRules      ProvinceQuinielaDrawRule[]
+  exceptions     ProvinceQuinielaException[]
+  drawNumbers    ProvinceQuinielaDrawNumber[]
+  resultReadings QuinielaResultReading[]
+  results        QuinielaResult[]
 }
 
 model ProvinceLotteryAvailability {
@@ -181,12 +194,14 @@ enum QuinielaDrawSlot {
 
 enum ProgramStatus {
   DRAFT // parsed import awaiting admin review
-  PUBLISHED // materialized days/draws are the source of truth
+  PUBLISHED // applied to the usual week, exceptions and draw numbers; the month is confirmed
   ARCHIVED // superseded by a newer version
 }
 
-// One monthly import for a province. Re-imports create a new version;
-// application logic keeps at most one PUBLISHED version per province/month.
+// One monthly import of the official program for a province. It is a check, not a copy: on
+// publish it is compared with the usual week (ProvinceQuinielaDrawRule) and only what differs is
+// written (rule changes from a date, date exceptions, draw-number anchors).
+// Re-imports create a new version; application logic keeps one PUBLISHED version per month.
 model ProvinceQuinielaMonthlyProgram {
   id         String        @id @default(cuid())
   provinceId String
@@ -204,7 +219,8 @@ model ProvinceQuinielaMonthlyProgram {
   warnings      Json? // checks that failed (vs. the web schedule, sequences, weekdays…)
 
   publishedAt DateTime?
-  days        ProvinceQuinielaProgramDay[]
+  exceptions  ProvinceQuinielaException[]
+  drawNumbers ProvinceQuinielaDrawNumber[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -213,57 +229,100 @@ model ProvinceQuinielaMonthlyProgram {
   @@index([provinceId, year, month, status])
 }
 
-model ProvinceQuinielaProgramDay {
-  id          String                         @id @default(cuid())
-  programId   String
-  program     ProvinceQuinielaMonthlyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
-  date        DateTime                       @db.Date
-  enabled     Boolean                        @default(true)
-  prizeExpiry DateTime?                      @db.Date // "Caducidad": last day to claim prizes
-
-  draws ProvinceQuinielaProgramDayDraw[]
-
-  @@unique([programId, date])
-}
-
-model ProvinceQuinielaProgramDayDraw {
-  id        String                     @id @default(cuid())
-  dayId     String
-  day       ProvinceQuinielaProgramDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
-  slot      QuinielaDrawSlot
-  drawTime  DateTime                   @db.Time(0) // local time of the draw
-  closeTime DateTime?                  @db.Time(0) // betting cutoff, if published
-  enabled   Boolean                    @default(true)
-
-  lotteries       ProvinceQuinielaDrawLottery[]
-  orderSelections OrderQuinielaDraw[]
-
-  @@unique([dayId, slot])
-}
-
-// Lotteries taking part in a draw that day, each with its official draw number
-// (e.g. Matutina 15:00 → Provincia, Ciudad, Córdoba, Santa Fe, Entre Ríos n.º 9040 and,
-// Monday to Friday, Montevideo n.º 4930).
-model ProvinceQuinielaDrawLottery {
-  drawId     String
-  draw       ProvinceQuinielaProgramDayDraw @relation(fields: [drawId], references: [id], onDelete: Cascade)
+// The usual Quiniela week of a province: a lottery takes part in a draw on a weekday at a time,
+// from validFrom until validTo (inclusive; null = still in force). A lottery joining or leaving
+// a draw, or a new time, closes rows and opens new ones from a date, so the past is kept.
+// e.g. Matutina · Montevideo · Monday..Friday (5 rows) · 15:00 · from 2026-01-01.
+model ProvinceQuinielaDrawRule {
+  id         String           @id @default(cuid())
+  provinceId String
+  province   Province         @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  slot       QuinielaDrawSlot
   lotteryId  String
-  lottery    Lottery                        @relation(fields: [lotteryId], references: [id], onDelete: Cascade)
-  drawNumber Int?
+  lottery    Lottery          @relation(fields: [lotteryId], references: [id], onDelete: Cascade)
+  weekday    Int // 0 = Sunday .. 6 = Saturday
+  drawTime   DateTime         @db.Time(0) // local time of the draw
+  validFrom  DateTime         @db.Date
+  validTo    DateTime?        @db.Date
 
-  @@id([drawId, lotteryId])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([provinceId, slot, lotteryId, weekday])
+}
+
+enum QuinielaExceptionAction {
+  SKIP // not held: the whole day (no slot), one draw (slot) or one lottery in a draw (slot + lottery)
+  ADD // a lottery takes part in a draw it usually is not in (slot + lottery + drawTime)
+  TIME // the draw (slot) is at another time (drawTime)
+  PRIZE_EXPIRY // the day's prizes expire on another date (prizeExpiry)
+}
+
+enum QuinielaExceptionSource {
+  PROGRAM // written when publishing an official program; replaced when the month is re-published
+  MANUAL // entered by an admin; kept
+}
+
+// A date that differs from the usual week.
+model ProvinceQuinielaException {
+  id          String                          @id @default(cuid())
+  provinceId  String
+  province    Province                        @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  date        DateTime                        @db.Date
+  action      QuinielaExceptionAction
+  slot        QuinielaDrawSlot?
+  lotteryId   String?
+  lottery     Lottery?                        @relation(fields: [lotteryId], references: [id], onDelete: Restrict, onUpdate: Restrict) // Restrict: a DB check uses lotteryId
+  drawTime    DateTime?                       @db.Time(0)
+  prizeExpiry DateTime?                       @db.Date
+  note        String?
+  source      QuinielaExceptionSource         @default(MANUAL)
+  programId   String?
+  program     ProvinceQuinielaMonthlyProgram? @relation(fields: [programId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([provinceId, date])
+}
+
+// Known official draw number of a lottery in a draw on a date. Other dates are counted from the
+// nearest one: +1 every date that draw is held. Publishing a program stores the month's first.
+model ProvinceQuinielaDrawNumber {
+  provinceId String
+  province   Province                        @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  slot       QuinielaDrawSlot
+  lotteryId  String
+  lottery    Lottery                         @relation(fields: [lotteryId], references: [id], onDelete: Cascade)
+  date       DateTime                        @db.Date
+  number     Int
+  source     QuinielaExceptionSource         @default(MANUAL)
+  programId  String?
+  program    ProvinceQuinielaMonthlyProgram? @relation(fields: [programId], references: [id], onDelete: SetNull)
+
+  @@id([provinceId, slot, lotteryId, date])
 }
 
 // ─── Scheduled jobs (admin "Tareas programadas") ─────────────────
 // Background tasks run by the worker (scripts/worker.ts) on a cron schedule, or by hand.
 
+enum JobType {
+  QUINIELA_PROGRAM // official monthly program of a province (reads its source website)
+  QUINIELA_RESULTS // draw results (extractos) from a source website
+  HOLIDAYS // national holidays
+}
+
 model ScheduledJob {
-  id          String  @id @default(cuid())
-  key         String  @unique // handler key in src/lib/jobs (e.g. "quiniela-program-B")
+  id          String    @id @default(cuid())
+  key         String    @unique // handler key in src/lib/jobs (e.g. "quiniela-program-B")
+  type        JobType
+  // Province-level types: which province and which reader/website ("loteria-gba").
+  provinceId  String?
+  province    Province? @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  source      String?
   name        String
-  description String? @db.Text
+  description String?   @db.Text
   schedule    String // cron expression, Buenos Aires time (e.g. "0 8 * * *")
-  enabled     Boolean @default(true)
+  enabled     Boolean   @default(true)
 
   lastRunAt  DateTime?
   lastStatus JobRunStatus?
@@ -300,6 +359,8 @@ model JobRun {
   error         String?      @db.Text
   triggeredById String?
   triggeredBy   User?        @relation("JobRunTriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+
+  readings QuinielaResultReading[]
 
   @@index([jobId, startedAt])
 }
@@ -480,8 +541,9 @@ model User {
   sessions          Session[]
   accounts          Account[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  resolvedQuinielaResults QuinielaResult[] @relation("QuinielaResultResolvedBy")
 }
 
 // ─── Better Auth tables (managed by the auth library) ─────────
@@ -744,14 +806,16 @@ model Order {
   @@index([customerId])
 }
 
-// Quiniela: draws selected for the whole order (multiplies every line).
+// Quiniela: draws selected for the whole order (multiplies every line). A draw is a date and a
+// slot of the order's province (the agency's); its lotteries, time and number are resolved
+// from the usual week and exceptions (src/lib/quiniela/calendar.ts).
 model OrderQuinielaDraw {
   orderId String
-  order   Order                          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  drawId  String
-  draw    ProvinceQuinielaProgramDayDraw @relation(fields: [drawId], references: [id])
+  order   Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  date    DateTime         @db.Date
+  slot    QuinielaDrawSlot
 
-  @@id([orderId, drawId])
+  @@id([orderId, date, slot])
 }
 
 // Quiniela: lotteries selected for the whole order (multiplies every line).
@@ -1153,4 +1217,69 @@ model LotterySettlement {
 
   @@unique([agencyId, issueDate])
   @@index([agencyId, dueDate])
+}
+
+// ─── Quiniela results (spec: quiniela-results) ───────────────────
+// What each source website published for a draw, and the consolidated result.
+
+enum QuinielaResultStatus {
+  PENDING // a single non-official source
+  CONFIRMED // sources agree (two or more, or an official one)
+  CONFLICT // sources disagree: an admin chooses
+}
+
+// One source's reading of a draw. Raw evidence: the 20 numbers as published, in order
+// ("5964,2790,…"). A new reading from the same source replaces it (changedAt keeps when).
+model QuinielaResultReading {
+  id        String           @id @default(cuid())
+  source    String // reader key ("loteria-santafe", "jugandoonline"…)
+  date      DateTime         @db.Date
+  slot      QuinielaDrawSlot
+  lotteryId String
+  lottery   Lottery          @relation(fields: [lotteryId], references: [id], onDelete: Cascade)
+  numbers   String           @db.VarChar(160)
+  letters   String?          @db.VarChar(20)
+  official  Boolean          @default(false) // the source is the lottery itself or an official extract
+  jobRunId  String?
+  jobRun    JobRun?          @relation(fields: [jobRunId], references: [id], onDelete: SetNull)
+  readAt    DateTime         @default(now())
+  changedAt DateTime         @default(now())
+
+  @@unique([source, date, slot, lotteryId])
+  @@index([date, slot, lotteryId])
+}
+
+// The result of a draw, consolidated from its readings.
+model QuinielaResult {
+  id           String               @id @default(cuid())
+  date         DateTime             @db.Date
+  slot         QuinielaDrawSlot
+  lotteryId    String
+  lottery      Lottery              @relation(fields: [lotteryId], references: [id], onDelete: Cascade)
+  status       QuinielaResultStatus @default(PENDING)
+  letters      String?              @db.VarChar(20)
+  sources      Int                  @default(0) // readings that agree with the numbers below
+  confirmedAt  DateTime?
+  // Set when an admin resolved a conflict: these numbers stay even if sources keep disagreeing.
+  resolvedById String?
+  resolvedBy   User?                @relation("QuinielaResultResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt   DateTime?
+
+  numbers QuinielaResultNumber[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date, slot, lotteryId])
+  @@index([date, status])
+}
+
+// The 20 prizes of a result (empty while in conflict). Numbers are text: "0031" keeps its zeros.
+model QuinielaResultNumber {
+  resultId String
+  result   QuinielaResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  position Int // 1..20
+  number   String         @db.VarChar(6)
+
+  @@id([resultId, position])
 }

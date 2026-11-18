@@ -1,105 +1,124 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { JobType } from "@/generated/prisma/enums";
 import { requireAccess } from "@/lib/access";
 import { ensureJobs } from "@/lib/jobs/runner";
+import { JOB_TYPES } from "@/lib/jobs/definitions";
+import { cronText } from "@/lib/jobs/cron-text";
 import { prisma } from "@/lib/prisma";
-import { SimpleForm } from "@/components/schedule/simple-form";
-import { runJobAction, setJobEnabledAction } from "@/app/panel/quiniela/actions";
+import { RUN_STATUS, fmtDateTime } from "./run-status";
 
 export const metadata = { title: "Tareas programadas · Laqui" };
 export const dynamic = "force-dynamic";
 
-const fmt = (d: Date | null) =>
-  d ? d.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
-const STATUS = { RUNNING: "corriendo", OK: "ok", WARNING: "revisar", ERROR: "error" } as const;
-const STATUS_CLASS = { RUNNING: "", OK: "ok-text", WARNING: "warn", ERROR: "error" } as const;
-
-// Platform admin: background jobs, when they run and what they did.
-export default async function JobsPage() {
+// Platform admin: background jobs as a list (type, province, when, last and next run).
+// Each one opens its detail with the run history.
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tipo?: string }>;
+}) {
   const access = await requireAccess();
   if (!access.isPlatformAdmin) notFound();
+  const { tipo } = await searchParams;
+  const type = tipo && tipo in JOB_TYPES ? (tipo as JobType) : null;
   await ensureJobs();
-  const [jobs, runs] = await Promise.all([
-    prisma.scheduledJob.findMany({ orderBy: { name: "asc" } }),
-    prisma.jobRun.findMany({
-      orderBy: { startedAt: "desc" },
-      take: 30,
-      include: { job: { select: { name: true } }, triggeredBy: { select: { name: true } } },
-    }),
-  ]);
-  const lastRun = new Map<string, (typeof runs)[number]>();
-  for (const r of runs) if (!lastRun.has(r.jobId)) lastRun.set(r.jobId, r);
+  const jobs = await prisma.scheduledJob.findMany({
+    where: type ? { type } : {},
+    include: { province: { select: { name: true } } },
+    orderBy: [{ type: "asc" }, { name: "asc" }],
+  });
+  const counts = await prisma.scheduledJob.groupBy({
+    by: ["type"],
+    _count: true,
+  });
+  const count = (t: JobType) => counts.find((c) => c.type === t)?._count ?? 0;
 
   return (
     <main className="screen">
-      <Link href="/panel" className="back">
-        ← Panel
-      </Link>
       <div className="stack-xs">
         <h1>Tareas programadas</h1>
         <p className="muted small">
-          Las corre el worker (<code>npm run worker</code>) según su horario, en hora de Buenos Aires. También se pueden correr a mano.
+          Las corre el worker (<code>npm run worker</code>) en hora de Buenos
+          Aires. Cada tarea tiene un tipo y, si es de una provincia, de qué web
+          lee.
         </p>
       </div>
 
-      <ul className="list">
-        {jobs.map((job) => {
-          const last = lastRun.get(job.id);
-          return (
-            <li key={job.id} className="card stack-sm">
-              <div className="row">
-                <div className="stack-xs">
-                  <strong className={job.enabled ? "" : "muted"}>{job.name}</strong>
-                  <span className="small muted">{job.description}</span>
-                </div>
-                {job.lastStatus && <span className={`tag ${job.lastStatus === "OK" ? "ok" : ""}`}>{STATUS[job.lastStatus]}</span>}
-              </div>
-              <span className="small muted">
-                Horario <code>{job.schedule}</code> · última {fmt(job.lastRunAt)} · próxima {job.enabled ? fmt(job.nextRunAt) : "pausada"}
-              </span>
-              {last && (
-                <p className={`small ${STATUS_CLASS[last.status]}`}>
-                  {last.status === "ERROR" ? `Error: ${last.error}` : last.summary}
-                </p>
-              )}
-              <div className="row-actions">
-                <SimpleForm action={runJobAction.bind(null, job.key)} submitLabel="Correr ahora" />
-                <form action={setJobEnabledAction.bind(null, job.key, !job.enabled)}>
-                  <button type="submit" className="btn btn-secondary btn-sm">
-                    {job.enabled ? "Pausar" : "Reactivar"}
-                  </button>
-                </form>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <nav className="filter-chips" aria-label="Filtrar por tipo">
+        <Link href="?" className={`chip ${type ? "" : "on"}`}>
+          Todas
+        </Link>
+        {(Object.keys(JOB_TYPES) as JobType[]).map((t) => (
+          <Link
+            key={t}
+            href={`?tipo=${t}`}
+            className={`chip ${type === t ? "on" : ""}`}
+          >
+            {JOB_TYPES[t].label} <span className="muted">{count(t)}</span>
+          </Link>
+        ))}
+      </nav>
 
-      <section className="card stack-sm">
-        <h2>Últimas ejecuciones</h2>
-        {runs.length === 0 ? (
-          <p className="muted small">Todavía no corrió ninguna.</p>
-        ) : (
-          <ul className="list plain">
-            {runs.map((r) => (
-              <li key={r.id} className="row exception-row">
-                <div className="stack-xs">
-                  <strong className="small">
-                    {fmt(r.startedAt)} · {r.job.name}
-                  </strong>
-                  <span className="small muted">
-                    {r.trigger === "MANUAL" ? `a mano${r.triggeredBy ? ` (${r.triggeredBy.name})` : ""}` : "programada"}
-                    {r.finishedAt ? ` · ${Math.max(1, Math.round((r.finishedAt.getTime() - r.startedAt.getTime()) / 1000))} s` : ""}
-                    {" · "}
-                    {r.status === "ERROR" ? r.error : r.summary}
+      {jobs.length === 0 ? (
+        <p className="card small muted">
+          {type === "QUINIELA_RESULTS"
+            ? "Todavía no hay tareas de resultados: falta definir de qué páginas se leen los extractos."
+            : "No hay tareas de este tipo."}
+        </p>
+      ) : (
+        <ul className="list rows card job-list">
+          {jobs.map((job) => {
+            const status = job.lastStatus ? RUN_STATUS[job.lastStatus] : null;
+            return (
+              <li key={job.id}>
+                <Link
+                  href={`/panel/tareas/${job.id}`}
+                  className="job-row list-row"
+                >
+                  <span
+                    className={`dot ${job.enabled ? (status?.tone ?? "") : "off"}`}
+                    aria-hidden="true"
+                  />
+                  <span className="stack-xs job-what">
+                    <strong>{JOB_TYPES[job.type].label}</strong>
+                    <span className="small muted">
+                      {job.province ? job.province.name : "Todo el país"}
+                    </span>
                   </span>
-                </div>
-                <strong className={`small ${STATUS_CLASS[r.status]}`}>{STATUS[r.status]}</strong>
+                  <span className="small job-when">
+                    {job.enabled ? (
+                      cronText(job.schedule)
+                    ) : (
+                      <span className="muted">Pausada</span>
+                    )}
+                  </span>
+                  <span className="stack-xs small job-last">
+                    <span className="muted">Última</span>
+                    <span>
+                      {fmtDateTime(job.lastRunAt)}{" "}
+                      {status && (
+                        <span className={`status-chip ${status.tone}`}>
+                          {status.label}
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  <span className="stack-xs small job-next">
+                    <span className="muted">Próxima</span>
+                    <span>
+                      {job.enabled ? fmtDateTime(job.nextRunAt) : "—"}
+                    </span>
+                  </span>
+                  <span className="chevron" aria-hidden="true">
+                    ›
+                  </span>
+                </Link>
               </li>
-            ))}
-          </ul>
-        )}
-      </section>
+            );
+          })}
+        </ul>
+      )}
     </main>
   );
 }

@@ -28,9 +28,10 @@ The core design principle is layered configuration:
 
 - `Province`
 - `ProvinceGameAvailability`
-- `ProvinceQuinielaMonthlyProgram`
-- `ProvinceQuinielaProgramDay`
-- `ProvinceQuinielaProgramDayDraw`
+- `ProvinceQuinielaMonthlyProgram` (official PDF import: draft, checks, publication)
+- `ProvinceQuinielaDrawRule` (usual week: draw, lottery, weekday, time, valid from/until)
+- `ProvinceQuinielaException` (date exceptions)
+- `ProvinceQuinielaDrawNumber` (draw number anchors)
 - `Lottery`
 - `ProvinceLotteryAvailability`
 
@@ -51,9 +52,19 @@ The core design principle is layered configuration:
 
 ## Key Decisions
 
-### 1. Explicit Daily Quiniela Schedule
+### 1. Quiniela Schedule: Usual Week plus Exceptions
 
-The published Quiniela schedule is stored explicitly per day and per draw. Templates and import JSON may help generate it, but the published state must be materialized day by day.
+The Quiniela schedule is NOT stored day by day (it was until 2026-11-17: a full copy of every month, ~1.000 rows per province, almost all repeating the same week). It is resolved on demand from:
+
+- **Usual week** (`ProvinceQuinielaDrawRule`): one row per draw slot, lottery and weekday, with its time and a validity period (`validFrom`, `validTo` inclusive or open). A lottery joining or leaving a draw, or a new time, closes the old rows and opens new ones from a date; history is kept.
+- **Date exceptions** (`ProvinceQuinielaException`): `SKIP` (whole day, one draw, or one lottery in a draw), `ADD` (a lottery in a draw it usually is not in, with its time), `TIME` (a draw at another time), `PRIZE_EXPIRY`. Source `PROGRAM` (written by publishing an official program, replaced on re-publish) or `MANUAL` (kept).
+- **Draw numbers** (`ProvinceQuinielaDrawNumber`): anchors (slot, lottery, date, number). A date's number is the nearest anchor's number plus or minus the times that draw was held in between. Publishing stores the month's first numbers.
+- **Prize expiry**: draw date + `ProvinceGameAvailability.prizeExpiryDays` (10 in B), moved to the next day that is not Saturday, Sunday or a `Holiday`; differences are `PRIZE_EXPIRY` exceptions.
+- **Betting cutoff**: draw time minus `cutoffMinutes`, computed when resolving (not frozen at publish).
+
+Publishing a monthly program compares it with the usual week, per slot, lottery and weekday: a value that holds until the end of the month (at least twice, or the whole month) changes the usual week from the first date it holds; anything else becomes date exceptions. The admin sees the plan before publishing. Dates inside a month with a published program are "confirmed"; later dates are projected from the usual week.
+
+Orders reference a draw as (date, slot) in `OrderQuinielaDraw`; the province comes from the order's agency.
 
 ### 2. Minimal Agency Overrides
 
@@ -81,7 +92,7 @@ The total is derived from explicit lines multiplied by selected draws and lotter
 2. System extracts text or images.
 3. LLM returns normalized JSON draft.
 4. Admin reviews the parsed result.
-5. System publishes explicit daily draw configuration for the province.
+5. System compares it with the usual week and, on publish, updates the usual week from a date and writes date exceptions and draw number anchors.
 
 ## Availability Resolution
 
@@ -90,7 +101,7 @@ To determine whether a public betting option is available:
 1. The game must be globally active.
 2. The game must be available for the agency province.
 3. The game must be visible for the agency.
-4. For Quiniela, the draw must be enabled on that province day.
+4. For Quiniela, the draw must be held that date (usual week plus exceptions) and its cutoff not passed.
 5. The agency must be open according to rules and exceptions.
 
 ## Implementation Notes

@@ -80,7 +80,7 @@ export default async function CashSheetPage({ params }: { params: Promise<{ agen
           <Line key={i.id} label={`${i.name} × ${i.quantity}`} value={i.total} />
         ))}
         <Line label="Ingreso de efectivo" value={left.cashIn} />
-        <Line label="Venta (reporte de la máquina)" value={left.machineSales} />
+        <Line label="Venta online" value={left.machineSales} />
         {!left.creditPaymentsCash.isZero() && <Line label="Cobros de fiado en efectivo" value={left.creditPaymentsCash} />}
         {!left.otherCashIn.isZero() && <Line label="Otros ingresos" value={left.otherCashIn} />}
         <Line label="Total" value={left.total} strong />
@@ -142,7 +142,7 @@ export default async function CashSheetPage({ params }: { params: Promise<{ agen
           )}
 
           <section className="card stack-sm">
-            <h2>Venta de la máquina</h2>
+            <h2>Venta online</h2>
             <SimpleForm action={setMachineSalesAction.bind(null, sessionId)} submitLabel="Guardar venta">
               <label className="field">
                 <span className="small muted">Recaudación del turno según el reporte de la terminal ($)</span>

@@ -232,7 +232,7 @@ export async function setSessionItems(sessionId: string, quantities: Record<stri
 /** "Venta": what the terminal report says was sold in the shift (machine products). */
 export async function setMachineSales(sessionId: string, amount: string | number) {
   await openSessionOrFail(sessionId);
-  await prisma.cashSession.update({ where: { id: sessionId }, data: { machineSales: parseCash(amount, "Venta de la máquina") } });
+  await prisma.cashSession.update({ where: { id: sessionId }, data: { machineSales: parseCash(amount, "Venta online") } });
 }
 
 // ─── The sheet ─────────────────────────────────────────────────
@@ -328,7 +328,7 @@ export async function sessionSheet(sessionId: string) {
 export async function closeSession(input: { sessionId: string; countedCash: string | number; userId?: string | null; notes?: string | null }) {
   const session = await openSessionOrFail(input.sessionId);
   if (session.machineSales === null)
-    throw new FinanceValidationError("Cargá la venta del reporte de la máquina antes de cerrar (puede ser $0).");
+    throw new FinanceValidationError("Cargá la venta online antes de cerrar (puede ser $0).");
   const counted = parseCash(input.countedCash, "Efectivo");
   const { expectedCash, cashSales } = await sessionSheet(session.id);
   const difference = counted.sub(expectedCash);

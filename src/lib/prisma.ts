@@ -2,7 +2,7 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "@/generated/prisma/client";
 
 // Single PrismaClient per process; reused across hot reloads in dev.
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient | { $disconnect(): Promise<void> } };
 
 function createClient() {
   const url = new URL(process.env.DATABASE_URL ?? "");
@@ -19,6 +19,11 @@ function createClient() {
   return new PrismaClient({ adapter });
 }
 
-export const prisma = globalForPrisma.prisma ?? createClient();
+// After `prisma generate` the dev server reloads the generated module, so a cached client built
+// from the previous class no longer matches the schema: drop it and build a new one.
+const cached = globalForPrisma.prisma;
+if (cached && !(cached instanceof PrismaClient)) void cached.$disconnect().catch(() => {});
+
+export const prisma = cached instanceof PrismaClient ? cached : createClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;

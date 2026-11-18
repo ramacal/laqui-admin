@@ -109,7 +109,7 @@ export async function setMachineSalesAction(sessionId: string, _prev: FormState,
   return guarded(async () => {
     await requireMember(await agencyOfSession(sessionId));
     await setMachineSales(sessionId, str(form, "machineSales"));
-    return "Venta de la máquina guardada.";
+    return "Venta online guardada.";
   });
 }
 

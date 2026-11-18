@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ROLE_LABEL, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { publicUrl } from "@/lib/storage";
-import { SignOutButton } from "@/components/sign-out-button";
 import { money } from "@/components/products/price-parts";
 import { ownerFinanceTotals } from "@/lib/finance";
 
@@ -16,7 +15,10 @@ const agencySummary = {
   city: true,
   primaryColor: true,
   province: { select: { code: true } },
-  assets: { where: { kind: "LOGO_SYMBOL" as const }, select: { storageKey: true } },
+  assets: {
+    where: { kind: "LOGO_SYMBOL" as const },
+    select: { storageKey: true },
+  },
 };
 
 type AgencySummary = {
@@ -29,14 +31,29 @@ type AgencySummary = {
   assets: { storageKey: string }[];
 };
 
-function AgencyCard({ agency, badge }: { agency: AgencySummary; badge?: string }) {
+function AgencyCard({
+  agency,
+  badge,
+}: {
+  agency: AgencySummary;
+  badge?: string;
+}) {
   const logo = agency.assets[0];
   return (
     <li>
-      <Link href={`/panel/agencias/${agency.id}`} className="card row link-card">
+      <Link
+        href={`/panel/agencias/${agency.id}`}
+        className="card row link-card"
+      >
         <div className="row agency">
           {logo ? (
-            <Image src={publicUrl(logo.storageKey)} alt="" width={48} height={48} className="agency-logo" />
+            <Image
+              src={publicUrl(logo.storageKey)}
+              alt=""
+              width={48}
+              height={48}
+              className="agency-logo"
+            />
           ) : (
             <span
               className="agency-logo placeholder"
@@ -73,105 +90,136 @@ export default async function PanelPage() {
 
   // Platform admins see every agency; the rest only their memberships.
   const allAgencies = isPlatformAdmin
-    ? await prisma.agency.findMany({ where: { active: true }, select: agencySummary, orderBy: { name: "asc" } })
+    ? await prisma.agency.findMany({
+        where: { active: true },
+        select: agencySummary,
+        orderBy: { name: "asc" },
+      })
     : [];
   // Owner summary: money across all their agencies (spec agency-finances).
-  const finances = memberships.some((m) => m.role === "OWNER") ? await ownerFinanceTotals(user.id) : null;
+  const finances = memberships.some((m) => m.role === "OWNER")
+    ? await ownerFinanceTotals(user.id)
+    : null;
 
   return (
     <main className="screen">
-      <header className="topbar">
-        <div className="stack-xs">
-          <strong>{user.name}</strong>
-          <span className="muted small">{user.email}</span>
-        </div>
-        <SignOutButton />
-      </header>
+      <div className="stack-xs">
+        <h1>Hola, {user.name.split(" ")[0]}</h1>
+        <p className="muted">Elegí una sección o una agencia.</p>
+      </div>
 
       <section className="stack">
         {finances && finances.agencies.length > 0 && (
           <article className="card stack-sm">
             <div className="row">
               <h2>Finanzas</h2>
-              <strong className={finances.total.isNegative() ? "error" : ""}>{money(finances.total.toString())}</strong>
+              <strong className={finances.total.isNegative() ? "error" : ""}>
+                {money(finances.total.toString())}
+              </strong>
             </div>
             <ul className="list plain">
               {finances.agencies.map(({ agency, total }) => (
                 <li key={agency.id} className="row exception-row">
-                  <Link href={`/panel/agencias/${agency.id}/finanzas`} className="link small">
+                  <Link
+                    href={`/panel/agencias/${agency.id}/finanzas`}
+                    className="link small"
+                  >
                     {agency.name}
                   </Link>
-                  <span className={`small ${total.isNegative() ? "error" : ""}`}>{money(total.toString())}</span>
+                  <span
+                    className={`small ${total.isNegative() ? "error" : ""}`}
+                  >
+                    {money(total.toString())}
+                  </span>
                 </li>
               ))}
             </ul>
           </article>
         )}
 
-        {isPlatformAdmin && (
-          <Link href="/panel/juegos" className="card row link-card">
-            <div className="stack-xs">
-              <strong>Juegos y precios</strong>
-              <span className="muted small">Juegos oficiales y sus precios por provincia, con vigencia</span>
-            </div>
-            <span className="chevron" aria-hidden="true">
-              ›
-            </span>
-          </Link>
-        )}
+        <div className="card-grid">
+          {isPlatformAdmin && (
+            <Link href="/panel/juegos" className="card row link-card">
+              <div className="stack-xs">
+                <strong>Juegos y precios</strong>
+                <span className="muted small">
+                  Juegos oficiales y sus precios por provincia, con vigencia
+                </span>
+              </div>
+              <span className="chevron" aria-hidden="true">
+                ›
+              </span>
+            </Link>
+          )}
 
-        {isPlatformAdmin && (
-          <>
-            <Link href="/panel/quiniela" className="card row link-card">
-              <div className="stack-xs">
-                <strong>Sorteos de Quiniela</strong>
-                <span className="muted small">Programa mensual de Lotería: qué sorteos y loterías hay cada día</span>
-              </div>
-              <span className="chevron" aria-hidden="true">
-                ›
-              </span>
-            </Link>
-            <Link href="/panel/tareas" className="card row link-card">
-              <div className="stack-xs">
-                <strong>Tareas programadas</strong>
-                <span className="muted small">Lo que corre solo: programa de Quiniela, feriados…</span>
-              </div>
-              <span className="chevron" aria-hidden="true">
-                ›
-              </span>
-            </Link>
-          </>
-        )}
+          {isPlatformAdmin && (
+            <>
+              <Link href="/panel/quiniela" className="card row link-card">
+                <div className="stack-xs">
+                  <strong>Sorteos de Quiniela</strong>
+                  <span className="muted small">
+                    Programa mensual de Lotería: qué sorteos y loterías hay cada
+                    día
+                  </span>
+                </div>
+                <span className="chevron" aria-hidden="true">
+                  ›
+                </span>
+              </Link>
+              <Link href="/panel/tareas" className="card row link-card">
+                <div className="stack-xs">
+                  <strong>Tareas programadas</strong>
+                  <span className="muted small">
+                    Lo que corre solo: programa de Quiniela, feriados…
+                  </span>
+                </div>
+                <span className="chevron" aria-hidden="true">
+                  ›
+                </span>
+              </Link>
+            </>
+          )}
 
-        {memberships.some((m) => m.role === "OWNER") && (
-          <>
-            <Link href="/panel/horarios" className="card row link-card">
-              <div className="stack-xs">
-                <strong>Horario general</strong>
-                <span className="muted small">El horario que heredan tus agencias, con excepciones y feriados</span>
-              </div>
-              <span className="chevron" aria-hidden="true">
-                ›
-              </span>
-            </Link>
-            <Link href="/panel/productos" className="card row link-card">
-              <div className="stack-xs">
-                <strong>Productos</strong>
-                <span className="muted small">Productos oficiales y propios, con su precio y en qué agencias se ofrecen</span>
-              </div>
-              <span className="chevron" aria-hidden="true">
-                ›
-              </span>
-            </Link>
-          </>
-        )}
+          {memberships.some((m) => m.role === "OWNER") && (
+            <>
+              <Link href="/panel/horarios" className="card row link-card">
+                <div className="stack-xs">
+                  <strong>Horario general</strong>
+                  <span className="muted small">
+                    El horario que heredan tus agencias, con excepciones y
+                    feriados
+                  </span>
+                </div>
+                <span className="chevron" aria-hidden="true">
+                  ›
+                </span>
+              </Link>
+              <Link href="/panel/productos" className="card row link-card">
+                <div className="stack-xs">
+                  <strong>Productos</strong>
+                  <span className="muted small">
+                    Productos oficiales y propios, con su precio y en qué
+                    agencias se ofrecen
+                  </span>
+                </div>
+                <span className="chevron" aria-hidden="true">
+                  ›
+                </span>
+              </Link>
+            </>
+          )}
+        </div>
 
         {memberships.length > 0 && (
           <div className="stack-sm">
             <h2>Tus agencias</h2>
-            <ul className="list">
+            <ul className="list card-grid">
               {memberships.map((m) => (
-                <AgencyCard key={m.id} agency={m.agency} badge={ROLE_LABEL[m.role]} />
+                <AgencyCard
+                  key={m.id}
+                  agency={m.agency}
+                  badge={ROLE_LABEL[m.role]}
+                />
               ))}
             </ul>
           </div>
@@ -183,7 +231,7 @@ export default async function PanelPage() {
               <h2>Todas las agencias</h2>
               <span className="badge">Admin de plataforma</span>
             </div>
-            <ul className="list">
+            <ul className="list card-grid">
               {allAgencies.map((a) => (
                 <AgencyCard key={a.id} agency={a} />
               ))}
@@ -195,8 +243,9 @@ export default async function PanelPage() {
           <article className="card stack-sm">
             <h2>Todavía no tenés acceso</h2>
             <p className="muted">
-              Pedile al dueño o administrador de tu agencia que te registre como empleado con este email:{" "}
-              <strong>{user.email}</strong>. La próxima vez que ingreses vas a ver tu agencia acá.
+              Pedile al dueño o administrador de tu agencia que te registre como
+              empleado con este email: <strong>{user.email}</strong>. La próxima
+              vez que ingreses vas a ver tu agencia acá.
             </p>
           </article>
         )}

@@ -97,3 +97,8 @@
 - [x] 12.5 Admin screens: Sorteos de Quiniela (today, programs, upload, rules), program detail, Tareas programadas
 - [ ] 12.6 Quiniela results (extractos) job
 - [ ] 12.7 Betting cutoff confirmed with agencies (minutes before each draw)
+- [x] 12.10 Typed scheduled jobs (type, province, source; handler by type + source); tasks list with filters and job detail with run history
+- [x] 12.11 Quiniela results module (spec: quiniela-results): readings per source + consolidated result (confirmed / pending / conflict, admin resolution); readers: Lotería de la Provincia (official), Lotería de Santa Fe (official extracts: Ciudad, Provincia, Santa Fe, Uruguay, Entre Ríos, Córdoba), Jugando Online, notitimba (night, 1 req/min); results tab and detail
+- [ ] 12.12 Results history backfill (Santa Fe month/draw selectors, notitimba by date) and prize computation for orders
+- [x] 12.9 Official game picture (GameDefinition.imageKey, public bucket), compressed on upload to WebP ≤ 512 px with sharp; shown in the games list and edit page
+- [x] 12.8 Quiniela schedule as usual week (valid from/until) + date exceptions + draw number anchors + prize expiry rule, instead of a day-by-day copy; publishing a program compares it with the usual week; admin screens for the usual week, exceptions and anchors
