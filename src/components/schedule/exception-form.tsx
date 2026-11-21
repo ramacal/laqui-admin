@@ -3,6 +3,9 @@
 import { useActionState, useState } from "react";
 import type { FormState } from "@/app/panel/horarios/actions";
 import type { Range } from "@/lib/schedule";
+import { Plus, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { FormActions } from "@/components/ui/editable-section";
 
 type Props = {
   action: (prev: FormState, form: FormData) => Promise<FormState>;
@@ -60,7 +63,7 @@ export function ExceptionForm({ action, today, defaultStart, defaultEnd }: Props
       {kind === "SPECIAL_HOURS" && (
         <div className="stack-xs">
           {slots.map((s, i) => (
-            <div key={i} className="range-row">
+            <div key={i} className="flex items-center gap-2">
               <input
                 type="time"
                 className="input time"
@@ -79,15 +82,15 @@ export function ExceptionForm({ action, today, defaultStart, defaultEnd }: Props
                 required
               />
               {slots.length > 1 && (
-                <button type="button" className="icon-btn" aria-label="Quitar tramo" onClick={() => setSlots(slots.filter((_, j) => j !== i))}>
-                  ×
-                </button>
+                <Button variant="quiet" size="icon" aria-label="Quitar tramo" title="Quitar tramo" onClick={() => setSlots(slots.filter((_, j) => j !== i))}>
+                  <X />
+                </Button>
               )}
             </div>
           ))}
-          <button type="button" className="link-btn" onClick={() => setSlots([...slots, { opensAt: "17:00", closesAt: "20:00" }])}>
-            + Agregar tramo
-          </button>
+          <Button variant="ghost" size="sm" className="w-fit text-primary" onClick={() => setSlots([...slots, { opensAt: "17:00", closesAt: "20:00" }])}>
+            <Plus /> Agregar tramo
+          </Button>
         </div>
       )}
 
@@ -96,14 +99,7 @@ export function ExceptionForm({ action, today, defaultStart, defaultEnd }: Props
         <input name="reason" className="input" placeholder="Vacaciones, inventario, duelo…" maxLength={120} />
       </label>
 
-      <button type="submit" className="btn btn-primary" disabled={pending}>
-        {pending ? "Guardando…" : "Agregar excepción"}
-      </button>
-      {state && (
-        <p className={`small ${state.ok ? "ok-text" : "error"}`} role="status">
-          {state.message}
-        </p>
-      )}
+      <FormActions state={state} pending={pending} submitLabel="Agregar" />
     </form>
   );
 }

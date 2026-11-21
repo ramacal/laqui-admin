@@ -43,16 +43,16 @@ async function validate(input: SettlementInput) {
   if (amount.decimalPlaces() > 2) throw new FinanceValidationError("El saldo admite hasta 2 decimales.");
 
   await ensureDefaultFunds(input.agencyId);
-  const bank = await prisma.agencyFund.findFirstOrThrow({ where: { agencyId: input.agencyId, kind: "BANK_ACCOUNT" } });
+  const bank = await prisma.agencyFund.findUniqueOrThrow({ where: { settlesAgencyId: input.agencyId } });
   if (dateValue(input.dueDate) < bank.openingDate)
     throw new FinanceValidationError(
-      `La cuenta bancaria arranca el ${bank.openingDate.toISOString().slice(0, 10)}: corregí su saldo inicial para cargar tickets anteriores.`,
+      `La cuenta del legajo arranca el ${bank.openingDate.toISOString().slice(0, 10)}: corregí su saldo inicial para cargar tickets anteriores.`,
     );
   const ticketAccount = normalizeAccount(input.accountNumber);
   const bankAccount = normalizeAccount(bank.accountNumber);
   if (ticketAccount && bankAccount && ticketAccount !== bankAccount && !input.confirmAccountMismatch)
     throw new FinanceValidationError(
-      `El ticket dice la cuenta ${input.accountNumber} pero la cuenta de la agencia es ${bank.accountNumber}. Revisalo o confirmá para guardar igual.`,
+      `El ticket dice la cuenta ${input.accountNumber} pero la cuenta del legajo es ${bank.accountNumber}. Revisalo o confirmá para guardar igual.`,
     );
   return { amount, bank };
 }
@@ -154,7 +154,7 @@ export const ticketLink = (key: string) => signedUrl(key, 300);
 export async function agencySettlements(agencyId: string, days = 14) {
   const today = todayIn(TZ);
   // Only flag days since the agency started using its bank account here.
-  const bank = await prisma.agencyFund.findFirst({ where: { agencyId, kind: "BANK_ACCOUNT" }, select: { openingDate: true } });
+  const bank = await prisma.agencyFund.findUnique({ where: { settlesAgencyId: agencyId }, select: { openingDate: true } });
   const window = dateValue(today).getTime() - days * 86_400_000;
   const from = new Date(Math.max(window, bank?.openingDate.getTime() ?? window));
   const rows = await prisma.lotterySettlement.findMany({

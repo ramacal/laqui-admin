@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   if (!access) return NextResponse.redirect(`${appUrl()}/login`);
   if (!agencyId || !canManageDrive(agencyRole(access, agencyId))) return new Response("No encontrado", { status: 404 });
 
-  const back = `${appUrl()}/panel/agencias/${agencyId}`;
+  const back = `${appUrl()}/panel/agencias/${agencyId}/datos`;
   if (!hasGoogleClient() || !hasDriveKey()) return NextResponse.redirect(`${back}?drive=error-config`);
 
   const nonce = newNonce();

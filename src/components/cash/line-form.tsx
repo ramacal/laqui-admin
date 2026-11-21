@@ -41,7 +41,13 @@ export function LineForm({
           <input name="amount" className="input" inputMode="decimal" placeholder="1.500" required />
         </label>
       </div>
-      {line === "TRANSFER" && (
+      {line === "TRANSFER" && accounts.length === 0 && (
+        <p className="small warn">
+          No hay cuentas para recibir transferencias. Agregá una en Configuración › Medios de cobro (la cuenta del legajo
+          es solo para Lotería).
+        </p>
+      )}
+      {line === "TRANSFER" && accounts.length > 0 && (
         <label className="field">
           <span className="small muted">¿A qué cuenta transfirió?</span>
           <select name="fundId" className="input" required>

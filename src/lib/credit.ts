@@ -48,7 +48,7 @@ export async function chargeCustomer(input: { customerId: string; amount: string
 export async function payCustomer(input: { customerId: string; amount: string | number; fundId: string; userId?: string | null }) {
   const customer = await prisma.agencyCustomer.findUniqueOrThrow({ where: { id: input.customerId } });
   const fund = await prisma.agencyFund.findUnique({ where: { id: input.fundId } });
-  if (!fund || fund.agencyId !== customer.agencyId || !fund.active) throw new FinanceValidationError("Elegí dónde entró la plata.");
+  if (!fund || fund.agencyId !== customer.agencyId || !fund.active || fund.settlesAgencyId) throw new FinanceValidationError("Elegí dónde entró la plata.");
   const amount = parseAmount(input.amount);
   const session = await openSessionOf(customer.agencyId);
   const date = session ? session.date.toISOString().slice(0, 10) : await agencyToday(customer.agencyId);

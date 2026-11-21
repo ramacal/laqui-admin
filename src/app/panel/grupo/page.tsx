@@ -1,7 +1,15 @@
 import Link from "next/link";
+import { ArrowRight, UserMinus } from "lucide-react";
 import { currentGroupId, requireAccess } from "@/lib/access";
 import { groupDetail } from "@/lib/groups";
 import { SimpleForm } from "@/components/schedule/simple-form";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ui/confirm-action";
+import { EditableSection } from "@/components/ui/editable-section";
+import { PageHeader } from "@/components/ui/page-header";
+import { Row, RowList } from "@/components/ui/row-list";
+import { SettingsPage, SettingsSection } from "@/components/ui/settings-section";
 import { addOwnerAction, removeOwnerAction } from "./actions";
 
 export const metadata = { title: "Personas del grupo · Laqui" };
@@ -19,8 +27,7 @@ export default async function GroupPeoplePage({ searchParams }: { searchParams: 
   if (!group) {
     return (
       <main className="screen">
-        <h1>Personas del grupo</h1>
-        <p className="card muted">Esta sección es para los dueños de un grupo de agencias.</p>
+        <PageHeader title="Personas del grupo" subtitle="Esta sección es para los dueños de un grupo de agencias." />
       </main>
     );
   }
@@ -30,100 +37,101 @@ export default async function GroupPeoplePage({ searchParams }: { searchParams: 
 
   return (
     <main className="screen">
-      <div className="stack-xs">
-        <h1>Personas del grupo</h1>
-        <p className="muted">
-          {group.name} · {activeAgencies.length} {activeAgencies.length === 1 ? "agencia" : "agencias"}
-        </p>
-      </div>
+      <PageHeader
+        title="Personas del grupo"
+        subtitle={`${group.name} · ${activeAgencies.length} ${activeAgencies.length === 1 ? "agencia" : "agencias"}`}
+      />
 
-      <section className="card stack-sm">
-        <div className="stack-xs">
-          <h2>Dueños</h2>
-          <p className="muted small">
-            Todos los dueños ven y manejan todas las agencias del grupo, la plata, el horario general y los productos y
-            precios. Los administradores y empleados de cada agencia se cargan en su Personal.
-          </p>
-        </div>
-        <ul className="list plain">
-          {group.owners.map((o) => (
-            <li key={o.id} className="row exception-row">
-              <div className="stack-xs">
-                <strong>{o.user?.name ?? o.email}</strong>
-                <span className="muted small">
-                  {o.user ? o.email : "Todavía no ingresó: va a tener acceso cuando entre con Google"}
-                  {o.userId === access.user.id ? " · vos" : ""}
-                </span>
-              </div>
-              {!lastOne && (
-                <details>
-                  <summary className="small">Sacar</summary>
-                  <div className="spaced">
-                    <SimpleForm
-                      action={removeOwnerAction.bind(null, group.id, o.id)}
-                      submitLabel={o.userId === access.user.id ? "Dejar de ser dueño" : "Sacar del grupo"}
-                      buttonClassName="btn btn-sm btn-danger"
-                    >
-                      <p className="small muted">Deja de ver las agencias del grupo. Queda registrado quién lo sacó.</p>
-                    </SimpleForm>
-                  </div>
-                </details>
-              )}
-            </li>
-          ))}
-        </ul>
-        {lastOne && <p className="small muted">El grupo tiene que tener al menos un dueño.</p>}
+      <SettingsPage>
+        <EditableSection
+          title="Dueños"
+          description="Todos los dueños ven y manejan todas las agencias del grupo, la plata, el horario general y los productos y precios. Los administradores y empleados de cada agencia se cargan en su Personal."
+          addLabel="Agregar dueño"
+          view={
+            <div className="flex flex-col gap-2">
+              <RowList>
+                {group.owners.map((o) => {
+                  const you = o.userId === access.user.id;
+                  return (
+                    <Row
+                      key={o.id}
+                      title={o.user?.name ?? o.email}
+                      badge={you ? <Badge>Vos</Badge> : !o.user ? <Badge tone="warning">Todavía no ingresó</Badge> : undefined}
+                      detail={o.user ? o.email : "Va a tener acceso cuando entre con Google"}
+                      trailing={
+                        lastOne ? undefined : (
+                          <ConfirmAction
+                            label={you ? "Dejar de ser dueño" : "Sacar"}
+                            icon={<UserMinus />}
+                            question={
+                              you
+                                ? "Dejás de ver las agencias del grupo. Queda registrado."
+                                : "Deja de ver las agencias del grupo. Queda registrado quién lo sacó."
+                            }
+                            confirmLabel={you ? "Sí, dejar" : "Sí, sacar"}
+                            action={removeOwnerAction.bind(null, group.id, o.id)}
+                          />
+                        )
+                      }
+                    />
+                  );
+                })}
+              </RowList>
+              {lastOne && <p className="text-sm text-muted-foreground">El grupo tiene que tener al menos un dueño.</p>}
+            </div>
+          }
+        >
+          <SimpleForm footer action={addOwnerAction.bind(null, group.id)} submitLabel="Agregar">
+            <label className="field">
+              <span className="small muted">Email de Google</span>
+              <input name="email" type="email" className="input" placeholder="nombre@gmail.com" required autoComplete="off" />
+            </label>
+            <p className="text-sm text-muted-foreground">
+              Si todavía no entró a Laqui, va a tener acceso la primera vez que ingrese con ese email.
+            </p>
+          </SimpleForm>
+        </EditableSection>
 
-        <details>
-          <summary>Agregar dueño</summary>
-          <div className="spaced">
-            <SimpleForm action={addOwnerAction.bind(null, group.id)} submitLabel="Agregar dueño">
-              <label className="field">
-                <span className="small muted">Email de Google</span>
-                <input name="email" type="email" className="input" placeholder="nombre@gmail.com" required autoComplete="off" />
-              </label>
-            </SimpleForm>
-          </div>
-        </details>
-      </section>
+        <SettingsSection title="Agencias" description="Las agencias del grupo y el titular de cada legajo.">
+          <RowList>
+            {group.agencies.map((a) => {
+              const titular = [a.titularFirstName, a.titularLastName].filter(Boolean).join(" ");
+              return (
+                <Row
+                  key={a.id}
+                  muted={!a.active}
+                  title={a.name}
+                  badge={!a.active ? <Badge>Inactiva</Badge> : undefined}
+                  detail={titular ? `Titular: ${titular}` : <span className="text-warning">Titular pendiente de cargar</span>}
+                  trailing={
+                    <Link href={`/panel/agencias/${a.id}/datos`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                      <ArrowRight /> Datos
+                    </Link>
+                  }
+                />
+              );
+            })}
+          </RowList>
+        </SettingsSection>
 
-      <section className="card stack-sm">
-        <h2>Agencias</h2>
-        <ul className="list plain">
-          {group.agencies.map((a) => {
-            const titular = [a.titularFirstName, a.titularLastName].filter(Boolean).join(" ");
-            return (
-              <li key={a.id} className="row exception-row">
-                <Link href={`/panel/agencias/${a.id}`} className="link">
-                  {a.name}
-                </Link>
-                <span className={`small ${titular ? "muted" : "warn"}`}>
-                  {titular ? `Titular: ${titular}` : "Titular pendiente"}
-                  {a.active ? "" : " · inactiva"}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      <section className="card stack-sm">
-        <h2>Actividad</h2>
-        {group.events.length === 0 ? (
-          <p className="muted small">Todavía no hay cambios registrados.</p>
-        ) : (
-          <ul className="list plain">
-            {group.events.map((e) => (
-              <li key={e.id} className="row exception-row">
-                <span className="small">
-                  <strong>{e.actor?.name ?? "Sistema"}</strong> {e.detail}
-                </span>
-                <span className="muted small">{when(e.createdAt)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <SettingsSection title="Actividad" description="Los últimos cambios en dueños, titulares y agencias del grupo.">
+          {group.events.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Todavía no hay cambios registrados.</p>
+          ) : (
+            <RowList>
+              {group.events.map((e) => (
+                <Row
+                  key={e.id}
+                  title={<span className="font-normal">
+                    <strong>{e.actor?.name ?? "Sistema"}</strong> {e.detail}
+                  </span>}
+                  trailing={<span className="text-sm whitespace-nowrap text-muted-foreground">{when(e.createdAt)}</span>}
+                />
+              ))}
+            </RowList>
+          )}
+        </SettingsSection>
+      </SettingsPage>
     </main>
   );
 }

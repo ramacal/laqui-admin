@@ -47,7 +47,7 @@ export default async function CashSheetPage({ params }: { params: Promise<{ agen
   const isOpen = session.status === "OPEN";
   const agency = await prisma.agency.findUniqueOrThrow({
     where: { id: agencyId },
-    select: { name: true, funds: { where: { active: true, kind: { not: "CASH" } }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } } },
+    select: { name: true, funds: { where: { active: true, kind: { not: "CASH" }, settlesAgencyId: null }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } } },
   });
   const catalog = isOpen ? await agencyCatalog(agencyId, session.date.toISOString().slice(0, 10)) : null;
   const physical = catalog
@@ -75,7 +75,7 @@ export default async function CashSheetPage({ params }: { params: Promise<{ agen
 
       <section className="card stack-xs">
         <h2>Entradas</h2>
-        <Line label="Cambio inicial" value={left.openingCash} />
+        <Line label="Efectivo inicial" value={left.openingCash} />
         {left.items.map((i) => (
           <Line key={i.id} label={`${i.name} × ${i.quantity}`} value={i.total} />
         ))}

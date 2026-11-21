@@ -68,15 +68,17 @@ export function PriceForm({
   action,
   today,
   amountLabel = "Precio",
+  footer = false,
   children,
 }: {
   action: (prev: FormState, form: FormData) => Promise<FormState>;
   today: string;
   amountLabel?: string;
+  footer?: boolean; // inside a panel: Cancelar + Guardar (FormActions)
   children?: React.ReactNode; // extra fields (e.g. a province picker or hidden inputs)
 }) {
   return (
-    <SimpleForm action={action} submitLabel="Guardar precio">
+    <SimpleForm action={action} submitLabel="Guardar precio" footer={footer}>
       {children}
       <div className="grid-2">
         <label className="field">
@@ -93,5 +95,38 @@ export function PriceForm({
         <input name="note" className="input" placeholder="Aumento de noviembre" maxLength={120} />
       </label>
     </SimpleForm>
+  );
+}
+
+/**
+ * Read-only price history for a panel's data: newest first, each with its state (programado,
+ * vigente, anterior) and since when. Older ones are dimmed.
+ */
+export function PriceTimeline({ rows, today }: { rows: PriceRow[]; today: string }) {
+  if (rows.length === 0) return <span className="text-warning">Sin precios cargados</span>;
+  const sorted = [...rows].sort((a, b) => b.validFrom.localeCompare(a.validFrom));
+  const currentId = sorted.find((r) => r.validFrom <= today)?.id;
+  return (
+    <ol className="m-0 flex list-none flex-col gap-1 p-0">
+      {sorted.map((r) => {
+        const state = r.validFrom > today ? "programado" : r.id === currentId ? "vigente" : "anterior";
+        return (
+          <li key={r.id} className={`flex flex-wrap items-baseline gap-x-2 text-sm ${state === "anterior" ? "text-muted-foreground" : ""}`}>
+            <span className="min-w-16 font-semibold">{money(r.amount)}</span>
+            <span
+              className={`rounded-full px-2 text-xs font-semibold ${
+                state === "vigente" ? "bg-success-soft text-success" : state === "programado" ? "bg-accent text-accent-foreground" : "bg-muted"
+              }`}
+            >
+              {state}
+            </span>
+            <span className="text-muted-foreground">
+              desde {fmtDate(r.validFrom)}
+              {r.note ? ` · ${r.note}` : ""}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

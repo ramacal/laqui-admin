@@ -704,7 +704,10 @@ model AgencyGameAvailability {
   agency   Agency         @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   gameId   String
   game     GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  visible  Boolean        @default(true)
+  visible  Boolean        @default(true) // "Se vende en la agencia": at the counter (cash register, catalog)
+  // "Se vende en web": offered in the public betting flow. Web orders are played at the agency,
+  // so it only counts while `visible` is on (the panel locks the web switch when it is off).
+  onWeb    Boolean        @default(true)
 
   @@id([agencyId, gameId])
 }
@@ -1086,6 +1089,9 @@ model OwnerProductAgency {
   product   OwnerProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
   agencyId  String
   agency    Agency       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  // The row itself means "se vende en la agencia". "Se vende en web": also offered in the public
+  // betting flow (web orders are fulfilled at the agency, so it needs the row).
+  onWeb     Boolean      @default(true)
 
   @@id([productId, agencyId])
   @@index([agencyId])
@@ -1120,6 +1126,11 @@ model AgencyFund {
   merchantNumber String? @db.VarChar(40) // número de comercio / terminal
   accountNumber  String? @db.VarChar(30) // bank account number as Lotería prints it ("C.A. 12345/0")
   reference      String? // free note for the owner
+
+  // The legajo's account: the one bank account where Lotería debits/credits the daily
+  // settlement. Holds the agency id when this fund is it (unique = one per agency); null for
+  // every other payment method. Configured in the agency's Datos, not in Medios de cobro.
+  settlesAgencyId String? @unique
 
   showToCustomers Boolean  @default(false) // offer these details to customers for paying
   openingBalance  Decimal  @default(0) @db.Decimal(14, 2)

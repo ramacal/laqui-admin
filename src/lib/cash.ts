@@ -2,7 +2,7 @@
 // (spec: agency-finances). A day uses either a single shift or morning + afternoon.
 //
 //   Left column (what the drawer should hold)    Right column (what left the drawer)
-//   cambio inicial                               aciertos raspaditas / quiniela / otros
+//   efectivo inicial                             aciertos raspaditas / quiniela / otros
 //   physical products (quantity × price)         retiros
 //   ingreso de efectivo                          gastos
 //   venta (machine report)                       transferencias (sales paid to an account)
@@ -78,14 +78,30 @@ export async function suggestShift(agencyId: string, date: string): Promise<Cash
   return null;
 }
 
-/** Suggested opening cash ("cambio inicial"): the cash counted when the previous session closed. */
-export async function suggestedOpeningCash(agencyId: string) {
-  const last = await prisma.cashSession.findMany({
-    where: { agencyId, status: "CLOSED", countedCash: { not: null } },
+/** The closed session right before (date, shift): its closing count starts the next one. */
+function previousClosedSession(agencyId: string, date: Date, shift: CashShift) {
+  return prisma.cashSession.findFirst({
+    where: {
+      agencyId,
+      status: "CLOSED",
+      countedCash: { not: null },
+      OR: [{ date: { lt: date } }, ...(shift === "AFTERNOON" ? [{ date, shift: "MORNING" as const }] : [])],
+    },
     orderBy: [{ date: "desc" }, { closedAt: "desc" }],
-    take: 1,
   });
-  return last[0]?.countedCash ?? ZERO;
+}
+
+/**
+ * Efectivo inicial (the paper sheet's "cambio inicial"). The agency's first caja types it: the
+ * cash fund starts at $0 and this count is its starting point. From then on it is locked to what
+ * was counted when the previous caja closed, so cash cannot appear or vanish between shifts
+ * (money taken out in between is a movement, not an opening difference).
+ */
+export async function openingCashFor(agencyId: string, date: string, shift: CashShift) {
+  const previous = await previousClosedSession(agencyId, dateValue(date), shift);
+  return previous
+    ? { locked: true as const, amount: previous.countedCash!, previous: { date: previous.date, shift: previous.shift } }
+    : { locked: false as const, amount: ZERO, previous: null };
 }
 
 /** The agency's open session, if any (only one at a time). */
@@ -110,7 +126,8 @@ export async function openSession(input: {
   if (input.shift !== "SINGLE" && shifts.has("SINGLE"))
     throw new FinanceValidationError("Ese día ya tiene una caja de turno único.");
   if (await openSessionOf(input.agencyId)) throw new FinanceValidationError("Hay una caja abierta: cerrala antes de abrir otra.");
-  const openingCash = parseCash(input.openingCash, "Cambio inicial");
+  const opening = await openingCashFor(input.agencyId, input.date, input.shift);
+  const openingCash = opening.locked ? opening.amount : parseCash(input.openingCash, "Efectivo inicial");
   const session = await prisma.cashSession.create({
     data: { agencyId: input.agencyId, date, shift: input.shift, openingCash, openedById: input.userId ?? null },
   });
@@ -163,7 +180,7 @@ export async function addSheetLine(input: {
   let fundId: string;
   if (input.line === "TRANSFER") {
     const fund = input.fundId ? await prisma.agencyFund.findUnique({ where: { id: input.fundId } }) : null;
-    if (!fund || fund.agencyId !== session.agencyId || fund.kind === "CASH" || !fund.active)
+    if (!fund || fund.agencyId !== session.agencyId || fund.kind === "CASH" || !fund.active || fund.settlesAgencyId)
       throw new FinanceValidationError("Elegí la cuenta donde entró la transferencia.");
     fundId = fund.id;
   } else {

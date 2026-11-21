@@ -23,8 +23,8 @@ export default async function CustomersPage({ params }: { params: Promise<{ agen
 
   return (
     <main className="screen">
-      <Link href={`/panel/agencias/${agencyId}/caja`} className="back">
-        ← Caja de {agency.name}
+      <Link href={`/panel/agencias/${agencyId}`} className="back">
+        ← {agency.name}
       </Link>
       <h1>Clientes y fiados</h1>
 

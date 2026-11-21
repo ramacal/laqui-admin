@@ -1,5 +1,7 @@
-// Server components shared by the general schedule and agency schedule screens.
+// Server components shared by the general schedule and agency schedule screens: the week, the
+// exceptions and the holidays, as compact rows (RowList) with their actions on the right.
 import Link from "next/link";
+import { CalendarClock, Lock, Trash2 } from "lucide-react";
 import type { ScheduleExceptionKind } from "@/generated/prisma/enums";
 import {
   closeOnAllHolidays,
@@ -8,7 +10,10 @@ import {
   openNormallyHere,
   type ScopeKind,
 } from "@/app/panel/horarios/actions";
-import { describeException, type Range } from "@/lib/schedule";
+import { WEEKDAYS_UI, describeException, formatRanges, type Range, type Week } from "@/lib/schedule";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Row, RowList } from "@/components/ui/row-list";
 
 const fmt = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-AR", {
@@ -21,6 +26,24 @@ const fmt = (iso: string) =>
 export const formatDateRange = (start: string, end: string) => (start === end ? fmt(start) : `${fmt(start)} → ${fmt(end)}`);
 
 const HOLIDAY_KIND = { FIXED: "inamovible", MOVABLE: "trasladable", BRIDGE: "puente" } as const;
+
+/** The usual week, read-only: one row per day, Monday first. */
+export function WeekList({ week }: { week: Week }) {
+  return (
+    <RowList>
+      {WEEKDAYS_UI.map(({ day, label }) => (
+        <Row
+          key={day}
+          muted={week[day].length === 0}
+          title={label}
+          trailing={
+            <span className={`text-sm ${week[day].length ? "" : "text-muted-foreground"}`}>{formatRanges(week[day])}</span>
+          }
+        />
+      ))}
+    </RowList>
+  );
+}
 
 type ExceptionRow = {
   id: string;
@@ -36,53 +59,59 @@ export function ExceptionsList({
   items,
   canDelete = false,
   inheritedBy,
+  empty = "No hay excepciones cargadas.",
 }: {
   items: ExceptionRow[];
   canDelete?: boolean;
   inheritedBy?: { agencyId: string; canEdit: boolean; overridden: Set<string> };
+  empty?: string;
 }) {
-  if (items.length === 0) return <p className="muted small">No hay excepciones cargadas.</p>;
+  if (items.length === 0) return <p className="text-sm text-muted-foreground">{empty}</p>;
   return (
-    <ul className="list plain">
+    <RowList>
       {items.map((e) => {
         const overridden = inheritedBy?.overridden.has(e.id);
         return (
-          <li key={e.id} className="row exception-row">
-            <div className="stack-xs">
-              <strong className={`small ${overridden ? "struck" : ""}`}>{formatDateRange(e.startDate, e.endDate)}</strong>
-              <span className="small muted">
-                {describeException(e)}
-                {e.reason ? ` · ${e.reason}` : ""}
-                {overridden ? " · cambiada en esta agencia" : ""}
-              </span>
-            </div>
-            {canDelete && (
-              <form action={deleteException.bind(null, e.id)}>
-                <button type="submit" className="icon-btn" aria-label={`Eliminar excepción del ${e.startDate}`}>
-                  ×
-                </button>
-              </form>
-            )}
-            {inheritedBy?.canEdit && !overridden && (
-              <div className="row-actions">
-                <form action={openNormallyHere.bind(null, inheritedBy.agencyId, e.id)}>
-                  <button type="submit" className="btn btn-secondary btn-sm">
-                    Abrir normal
-                  </button>
+          <Row
+            key={e.id}
+            muted={overridden}
+            title={<span className={overridden ? "line-through" : ""}>{formatDateRange(e.startDate, e.endDate)}</span>}
+            badge={overridden ? <Badge>Cambiada en esta agencia</Badge> : undefined}
+            detail={`${describeException(e)}${e.reason ? ` · ${e.reason}` : ""}`}
+            trailing={
+              canDelete ? (
+                <form action={deleteException.bind(null, e.id)} className="flex">
+                  <Button
+                    type="submit"
+                    variant="quiet"
+                    size="icon"
+                    aria-label={`Eliminar excepción del ${e.startDate}`}
+                    title="Eliminar"
+                  >
+                    <Trash2 />
+                  </Button>
                 </form>
-                <Link
-                  href={`?desde=${e.startDate}&hasta=${e.endDate}#agregar`}
-                  className="btn btn-secondary btn-sm"
-                  scroll={false}
-                >
-                  Abrir horario especial
-                </Link>
-              </div>
-            )}
-          </li>
+              ) : inheritedBy?.canEdit && !overridden ? (
+                <div className="flex flex-wrap justify-end gap-2">
+                  <form action={openNormallyHere.bind(null, inheritedBy.agencyId, e.id)} className="flex">
+                    <Button type="submit" variant="outline" size="sm">
+                      Abrir normal
+                    </Button>
+                  </form>
+                  <Link
+                    href={`?desde=${e.startDate}&hasta=${e.endDate}#agregar`}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                    scroll={false}
+                  >
+                    <CalendarClock /> Horario especial
+                  </Link>
+                </div>
+              ) : undefined
+            }
+          />
         );
       })}
-    </ul>
+    </RowList>
   );
 }
 
@@ -97,39 +126,36 @@ export function HolidaysList({
   scope: { kind: ScopeKind; id: string };
   canEdit: boolean;
 }) {
-  if (items.length === 0) return <p className="muted small">No hay feriados cargados para los próximos meses.</p>;
-  const pending = items.filter((h) => !h.covered).length;
+  if (items.length === 0) return <p className="text-sm text-muted-foreground">No hay feriados cargados para los próximos meses.</p>;
   return (
-    <div className="stack-sm">
-      <ul className="list plain">
-        {items.map((h) => (
-          <li key={h.id} className="row exception-row">
-            <div className="stack-xs">
-              <strong className="small">
-                {fmt(h.date)} · {h.name}
-              </strong>
-              <span className="small muted">
-                {HOLIDAY_KIND[h.kind]}
-                {h.covered ? " · ya tiene excepción" : " · se abre con horario normal"}
-              </span>
-            </div>
-            {canEdit && !h.covered && (
-              <form action={closeOnHoliday.bind(null, scope.kind, scope.id, h.id)}>
-                <button type="submit" className="btn btn-secondary btn-sm">
-                  Cerrar
-                </button>
+    <RowList>
+      {items.map((h) => (
+        <Row
+          key={h.id}
+          title={`${fmt(h.date)} · ${h.name}`}
+          detail={`${HOLIDAY_KIND[h.kind]} · ${h.covered ? "ya tiene excepción" : "se abre con horario normal"}`}
+          trailing={
+            canEdit && !h.covered ? (
+              <form action={closeOnHoliday.bind(null, scope.kind, scope.id, h.id)} className="flex">
+                <Button type="submit" variant="outline" size="sm">
+                  <Lock /> Cerrar
+                </Button>
               </form>
-            )}
-          </li>
-        ))}
-      </ul>
-      {canEdit && pending > 1 && (
-        <form action={closeOnAllHolidays.bind(null, scope.kind, scope.id)}>
-          <button type="submit" className="btn btn-secondary">
-            Cerrar en todos los feriados del próximo año
-          </button>
-        </form>
-      )}
-    </div>
+            ) : undefined
+          }
+        />
+      ))}
+    </RowList>
+  );
+}
+
+/** "Cerrar en todos los feriados del próximo año", for a section's actions column. */
+export function CloseAllHolidaysButton({ scope }: { scope: { kind: ScopeKind; id: string } }) {
+  return (
+    <form action={closeOnAllHolidays.bind(null, scope.kind, scope.id)} className="flex">
+      <Button type="submit" variant="outline" size="sm" className="flex-1 lg:justify-start">
+        <Lock /> Cerrar en todos
+      </Button>
+    </form>
   );
 }

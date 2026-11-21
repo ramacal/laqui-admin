@@ -17,10 +17,10 @@ export async function GET(req: Request) {
   const access = await getAccess();
   if (!access) return NextResponse.redirect(`${appUrl()}/login`);
   if (!state || !nonce || !safeEqual(nonce, state.nonce) || state.userId !== access.user.id) {
-    return NextResponse.redirect(`${appUrl()}/panel${state ? `/agencias/${state.agencyId}` : ""}?drive=error-estado`);
+    return NextResponse.redirect(`${appUrl()}/panel${state ? `/agencias/${state.agencyId}/datos` : ""}?drive=error-estado`);
   }
 
-  const back = (result: string) => NextResponse.redirect(`${appUrl()}/panel/agencias/${state.agencyId}?drive=${result}`);
+  const back = (result: string) => NextResponse.redirect(`${appUrl()}/panel/agencias/${state.agencyId}/datos?drive=${result}`);
   if (!canManageDrive(agencyRole(access, state.agencyId))) return back("error-acceso");
   if (q.get("error")) return back("cancelado"); // access_denied: the user closed the consent screen
   const code = q.get("code");

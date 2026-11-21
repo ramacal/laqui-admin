@@ -4,6 +4,7 @@
 // is not already an owner of the group, and it has no default: the person decides.
 import { useActionState, useState } from "react";
 import type { FormState } from "@/app/panel/horarios/actions";
+import { FormActions } from "@/components/ui/editable-section";
 
 const CHOICES = [
   { value: "OWNER", label: "Dueño del grupo", hint: "Ve y maneja todas las agencias del grupo" },
@@ -70,14 +71,7 @@ export function TitularForm({
       )}
       {typed && ownerEmails.includes(typed) && <p className="small muted">Ese email ya es de un dueño del grupo.</p>}
 
-      <button type="submit" className="btn btn-primary" disabled={pending}>
-        {pending ? "Guardando…" : "Guardar titular"}
-      </button>
-      {state && (
-        <p className={`small ${state.ok ? "ok-text" : "error"}`} role="status">
-          {state.message}
-        </p>
-      )}
+      <FormActions state={state} pending={pending} />
     </form>
   );
 }

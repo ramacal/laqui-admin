@@ -92,7 +92,7 @@ export async function updateFundAction(fundId: string, _prev: FormState, form: F
 export async function setFundActive(fundId: string, active: boolean) {
   await requireFinanceAccess(await agencyOfFund(fundId));
   const fund = await prisma.agencyFund.findUniqueOrThrow({ where: { id: fundId } });
-  if (fund.kind === "BANK_ACCOUNT" && !active) return; // the agency always keeps its bank account
+  if (fund.settlesAgencyId && !active) return; // the agency always keeps its legajo account
   await prisma.agencyFund.update({ where: { id: fundId }, data: { active } });
   revalidatePath("/panel", "layout");
 }

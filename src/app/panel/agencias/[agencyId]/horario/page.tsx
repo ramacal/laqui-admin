@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { agencyRole, canEditAgencyExceptions, canEditAgencyHours, ownsGroup, requireAccess } from "@/lib/access";
+import { agencyRole, canEditAgencyExceptions, canEditAgencyHours, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import {
   WEEKDAYS_UI,
@@ -16,8 +15,20 @@ import {
 } from "@/lib/schedule";
 import { WeeklyHoursEditor } from "@/components/schedule/weekly-hours-editor";
 import { ExceptionForm } from "@/components/schedule/exception-form";
-import { ExceptionsList, HolidaysList, formatDateRange } from "@/components/schedule/schedule-lists";
+import {
+  CloseAllHolidaysButton,
+  ExceptionsList,
+  HolidaysList,
+  WeekList,
+  formatDateRange,
+} from "@/components/schedule/schedule-lists";
 import { SimpleForm } from "@/components/schedule/simple-form";
+import { RotateCcw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { EditableSection } from "@/components/ui/editable-section";
+import { PageHeader } from "@/components/ui/page-header";
+import { Row, RowList } from "@/components/ui/row-list";
+import { SettingsPage, SettingsSection } from "@/components/ui/settings-section";
 import { addException, resetAgencyToGeneral, saveAgencyWeek } from "@/app/panel/horarios/actions";
 
 export const metadata = { title: "Horario de la agencia · Laqui" };
@@ -79,120 +90,137 @@ export default async function AgencySchedulePage({
       .filter((g) => ownExceptions.some((o) => o.startDate <= g.endDate && o.endDate >= g.startDate))
       .map((g) => g.id),
   );
-  const generalLink =
-    general?.groupId && ownsGroup(access, general.groupId)
-      ? `/panel/horarios${access.groups[0]?.id === general.groupId ? "" : `?group=${general.groupId}`}`
-      : null;
+  const pendingHolidays = holidays.filter((h) => !h.covered).length;
 
   return (
     <main className="screen">
-      <Link href={`/panel/agencias/${agencyId}`} className="back">
-        ← {agency.name}
-      </Link>
-      <h1>Horario</h1>
-
-      <section className={`card stack-xs status ${now.open ? "is-open" : "is-closed"}`}>
-        <strong>{now.open ? `Abierta ahora · cierra ${now.closesAt}` : "Cerrada ahora"}</strong>
-        <span className="small">
-          {now.localTime} hs · {SOURCE_LABEL[now.source]}
-          {now.reason ? ` · ${now.reason}` : ""}
-          {!now.open && now.opensNextAt ? ` · abre ${now.opensNextAt}` : ""}
-        </span>
-      </section>
-
-      <section className="card stack-sm">
-        <h2>Próximos 7 días</h2>
-        <ul className="list plain">
-          {next7.map((d) => (
-            <li key={d.date} className="row exception-row">
-              <span className="small">
-                <strong>{formatDateRange(d.date, d.date)}</strong>
-                {d.holiday ? <span className="muted"> · {d.holiday.name}</span> : null}
-              </span>
-              <span className={`small ${d.closed ? "muted" : ""}`}>
-                {formatRanges(d.ranges)}
-                {d.holidayWithoutException ? <span className="warn"> · feriado sin excepción</span> : null}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="stack-sm">
-        <div className="row">
-          <h2>Horario semanal</h2>
-          <span className={`badge ${inherits ? "neutral" : ""}`}>
-            {!general ? "Propio" : inherits ? "Horario general" : "Personalizado"}
+      <PageHeader
+        back={{ href: `/panel/agencias/${agencyId}`, label: agency.name }}
+        title="Horario"
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
+            <Badge tone={now.open ? "success" : "neutral"}>{now.open ? "Abierta ahora" : "Cerrada ahora"}</Badge>
+            <span>
+              {now.localTime} hs
+              {now.open ? ` · cierra ${now.closesAt}` : now.opensNextAt ? ` · abre ${now.opensNextAt}` : ""}
+              {` · ${SOURCE_LABEL[now.source]}`}
+              {now.reason ? ` · ${now.reason}` : ""}
+            </span>
           </span>
-        </div>
+        }
+      />
 
-        {inherits && (
-          <p className="muted small">
-            Usa el horario general.{" "}
-            {generalLink && (
-              <Link href={generalLink} className="link">
-                Ver horario general
-              </Link>
-            )}
-            {canHours && " Si lo cambiás acá, esta agencia queda personalizada y el resto no cambia."}
-          </p>
-        )}
-        {general && !inherits && canHours && (
-          <div className="card stack-xs">
-            <p className="small">Esta agencia tiene su propio horario semanal. Las excepciones del general se siguen aplicando.</p>
-            <SimpleForm action={resetAgencyToGeneral.bind(null, agencyId)} submitLabel="Volver al horario general" />
-          </div>
-        )}
-
-        {canHours ? (
-          <WeeklyHoursEditor initial={week} action={saveAgencyWeek.bind(null, agencyId)} />
-        ) : (
-          <div className="card">
-            <ul className="list plain">
-              {WEEKDAYS_UI.map(({ day, label }) => (
-                <li key={day} className="row exception-row">
-                  <span className="small">{label}</span>
-                  <span className={`small ${week[day].length ? "" : "muted"}`}>{formatRanges(week[day])}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
-
-      <section className="card stack-sm">
-        <h2>Excepciones</h2>
-        {generalExceptions.length > 0 && (
-          <>
-            <h3 className="small muted">Del horario general</h3>
-            <ExceptionsList
-              items={generalExceptions}
-              inheritedBy={{ agencyId, canEdit: canExceptions, overridden }}
-            />
-            <h3 className="small muted">De esta agencia</h3>
-          </>
-        )}
-        <ExceptionsList items={ownExceptions} canDelete={canExceptions} />
-        {canExceptions && (
-          <details id="agregar" open={Boolean(desde)}>
-            <summary>{desde ? "Horario especial para esta agencia" : "Agregar excepción"}</summary>
-            <div className="spaced">
-              <ExceptionForm
-                key={`${desde ?? ""}-${hasta ?? ""}`}
-                action={addException.bind(null, "agency", agencyId)}
-                today={today}
-                defaultStart={desde}
-                defaultEnd={hasta}
+      <SettingsPage>
+        <SettingsSection title="Próximos 7 días" description="Cómo va a abrir, con las excepciones y feriados ya aplicados.">
+          <RowList>
+            {next7.map((d) => (
+              <Row
+                key={d.date}
+                muted={d.closed}
+                title={formatDateRange(d.date, d.date)}
+                detail={
+                  d.holiday ? (
+                    <>
+                      {d.holiday.name}
+                      {d.holidayWithoutException && <span className="text-warning"> · feriado sin excepción</span>}
+                    </>
+                  ) : undefined
+                }
+                trailing={<span className={`text-sm ${d.closed ? "text-muted-foreground" : ""}`}>{formatRanges(d.ranges)}</span>}
               />
-            </div>
-          </details>
-        )}
-      </section>
+            ))}
+          </RowList>
+        </SettingsSection>
 
-      <section className="card stack-sm">
-        <h2>Próximos feriados</h2>
-        <HolidaysList items={holidays} scope={{ kind: "agency", id: agencyId }} canEdit={canExceptions} />
-      </section>
+        <EditableSection
+          title="Horario semanal por defecto"
+          description={
+            !general
+              ? "Los días y horas en que abre habitualmente."
+              : inherits
+                ? "Lo hereda del horario general del grupo de agencias. Si lo cambiás acá, esta agencia queda personalizada y las demás no cambian."
+                : "Esta agencia tiene su propio horario: ya no hereda el del grupo. Las excepciones del horario general se siguen aplicando."
+          }
+          canEdit={canHours}
+          status={
+            <Badge tone={inherits ? "neutral" : "success"}>
+              {!general ? "Propio" : inherits ? "Heredado del grupo" : "Personalizado"}
+            </Badge>
+          }
+          view={<WeekList week={week} />}
+          forms={
+            general && !inherits && canHours
+              ? [
+                  {
+                    key: "volver",
+                    label: "Volver al general",
+                    icon: <RotateCcw key="icon" />,
+                    form: (
+                      <SimpleForm key="form" footer action={resetAgencyToGeneral.bind(null, agencyId)} submitLabel="Volver al general">
+                        <p className="text-sm text-muted-foreground">
+                          La agencia vuelve a usar el horario semanal del grupo y se borra su horario propio. Sus
+                          excepciones quedan como están.
+                        </p>
+                      </SimpleForm>
+                    ),
+                  },
+                ]
+              : []
+          }
+        >
+          <WeeklyHoursEditor initial={week} action={saveAgencyWeek.bind(null, agencyId)} />
+        </EditableSection>
+
+        <EditableSection
+          id="agregar"
+          title="Excepciones"
+          description="Días que abre distinto o cierra: vacaciones, inventario, feriados. Las del horario general valen para todas las agencias, y cada una puede cambiarlas."
+          canEdit={canExceptions}
+          addLabel="Agregar excepción"
+          defaultOpen={Boolean(desde)}
+          view={<ExceptionLists />}
+        >
+          <ExceptionForm
+            key={`${desde ?? ""}-${hasta ?? ""}`}
+            action={addException.bind(null, "agency", agencyId)}
+            today={today}
+            defaultStart={desde}
+            defaultEnd={hasta}
+          />
+        </EditableSection>
+
+        <SettingsSection
+          title="Próximos feriados"
+          description="Los feriados no cierran solos: si no tienen excepción, la agencia abre con su horario normal."
+          actions={canExceptions && pendingHolidays > 1 ? <CloseAllHolidaysButton scope={{ kind: "agency", id: agencyId }} /> : undefined}
+        >
+          <HolidaysList items={holidays} scope={{ kind: "agency", id: agencyId }} canEdit={canExceptions} />
+        </SettingsSection>
+      </SettingsPage>
     </main>
   );
+
+  // General exceptions this agency already changed are not repeated: its own exception for those
+  // dates says what it does instead ("Abre normal (general: …)").
+  function ExceptionLists() {
+    const inherited = generalExceptions.filter((g) => !overridden.has(g.id));
+    if (inherited.length + ownExceptions.length === 0)
+      return <p className="text-sm text-muted-foreground">No hay excepciones próximas.</p>;
+    return (
+      <div className="flex flex-col gap-4">
+        {inherited.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <h3 className="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Del horario general</h3>
+            <ExceptionsList items={inherited} inheritedBy={{ agencyId, canEdit: canExceptions, overridden }} />
+          </div>
+        )}
+        {ownExceptions.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <h3 className="m-0 text-xs font-semibold tracking-wide text-muted-foreground uppercase">De esta agencia</h3>
+            <ExceptionsList items={ownExceptions} canDelete={canExceptions} />
+          </div>
+        )}
+      </div>
+    );
+  }
 }

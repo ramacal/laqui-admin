@@ -70,14 +70,14 @@ function parseDate(iso: string) {
 
 // ─── Payment methods ───────────────────────────────────────────
 
-/** Every agency has "Efectivo" and its bank account. Idempotent. */
+/** Every agency has "Efectivo" and the legajo's account. Idempotent. */
 export async function ensureDefaultFunds(agencyId: string) {
-  const funds = await prisma.agencyFund.findMany({ where: { agencyId }, select: { kind: true } });
+  const funds = await prisma.agencyFund.findMany({ where: { agencyId }, select: { kind: true, settlesAgencyId: true } });
   const today = dateValue(todayIn(TZ));
   if (!funds.some((f) => f.kind === "CASH"))
     await prisma.agencyFund.create({ data: { agencyId, kind: "CASH", name: "Efectivo", openingDate: today, sortOrder: 0 } });
-  if (!funds.some((f) => f.kind === "BANK_ACCOUNT")) {
-    // The single bank account is where the provincial lottery settles (e.g. Banco Provincia for B).
+  if (!funds.some((f) => f.settlesAgencyId)) {
+    // The legajo's account: where the provincial lottery settles (e.g. Banco Provincia for B).
     const agency = await prisma.agency.findUnique({
       where: { id: agencyId },
       select: { province: { select: { settlementBank: true } } },
@@ -89,6 +89,7 @@ export async function ensureDefaultFunds(agencyId: string) {
         kind: "BANK_ACCOUNT",
         name: bank === "Banco de la Provincia de Buenos Aires" ? "Cuenta Banco Provincia" : bank ? `Cuenta ${bank}` : "Cuenta bancaria",
         provider: bank,
+        settlesAgencyId: agencyId,
         openingDate: today,
         sortOrder: 1,
       },
@@ -136,9 +137,7 @@ function cleanFund(input: FundInput) {
 }
 
 export async function createFund(agencyId: string, input: FundInput) {
-  const data = cleanFund(input);
-  if (data.kind === "BANK_ACCOUNT" && (await prisma.agencyFund.count({ where: { agencyId, kind: "BANK_ACCOUNT" } })))
-    throw new FinanceValidationError("La agencia ya tiene su cuenta bancaria: editala en lugar de crear otra.");
+  const data = cleanFund(input); // never the legajo's account: that one is created by ensureDefaultFunds
   const openingBalance =
     input.openingBalance === undefined || String(input.openingBalance).trim() === ""
       ? ZERO
@@ -160,6 +159,7 @@ export async function createFund(agencyId: string, input: FundInput) {
 export async function updateFund(fundId: string, input: Omit<FundInput, "kind">) {
   const fund = await prisma.agencyFund.findUniqueOrThrow({ where: { id: fundId } });
   const data = cleanFund({ ...input, kind: fund.kind });
+  if (fund.settlesAgencyId) data.showToCustomers = false; // the legajo's account is not for customers
   const openingBalance =
     input.openingBalance === undefined || String(input.openingBalance).trim() === ""
       ? fund.openingBalance

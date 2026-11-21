@@ -1,27 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { agencyRole, canViewStaff, requireAccess } from "@/lib/access";
-import { FUND_KIND_LABEL, MOVEMENT_KIND_LABEL, agencyBalances, agencyMovements } from "@/lib/finance";
+import { MOVEMENT_KIND_LABEL, agencyBalances, agencyMovements } from "@/lib/finance";
 import { prisma } from "@/lib/prisma";
 import { todayIn } from "@/lib/schedule";
-import { agencySettlements } from "@/lib/settlement";
 import { money } from "@/components/products/price-parts";
-import { EditFundForm, MovementForm, NewFundForm, TransferForm } from "@/components/finance/finance-forms";
-import {
-  addMovementAction,
-  createFundAction,
-  setFundActive,
-  transferAction,
-  updateFundAction,
-  voidMovementAction,
-} from "@/app/panel/finanzas/actions";
+import { MovementForm, TransferForm } from "@/components/finance/finance-forms";
+import { addMovementAction, transferAction, voidMovementAction } from "@/app/panel/finanzas/actions";
 
-export const metadata = { title: "Finanzas de la agencia · Laqui" };
+export const metadata = { title: "Movimientos · Laqui" };
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
 const fmtDate = (d: Date) =>
   d.toLocaleDateString("es-AR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "2-digit" });
 
+// Operatoria: money in and out of each payment method. The methods themselves are configured
+// in /medios.
 export default async function AgencyFinancesPage({
   params,
   searchParams,
@@ -42,100 +35,37 @@ export default async function AgencyFinancesPage({
   const activeFunds = funds.filter((f) => f.fund.active).map((f) => ({ id: f.fund.id, name: f.fund.name }));
   const filterFund = funds.find((f) => f.fund.id === medio)?.fund;
   const movements = await agencyMovements(agencyId, { fundId: filterFund?.id, take: 60 });
-  const { upcoming, missing } = await agencySettlements(agencyId);
 
   return (
     <main className="screen">
       <Link href={`/panel/agencias/${agencyId}`} className="back">
         ← {agency.name}
       </Link>
-      <h1>Finanzas</h1>
+      <h1>Movimientos</h1>
 
-      <section className="card stack-xs">
-        <span className="small muted">Total en todos los medios, hoy</span>
-        <strong className={`big-number ${total.isNegative() ? "error" : ""}`}>{money(total.toString())}</strong>
-      </section>
-
-      <Link href={`/panel/agencias/${agencyId}/liquidaciones`} className="card row link-card">
+      <section className="card stack-sm">
         <div className="stack-xs">
-          <strong>Liquidaciones de Lotería</strong>
-          <span className="small muted">
-            {upcoming.length
-              ? upcoming
-                  .map((u) => `${u.direction === "DEBIT" ? "Débito" : "Crédito"} de ${money(u.amount.toString())} el ${u.dueDate.toISOString().slice(8, 10)}/${u.dueDate.toISOString().slice(5, 7)}`)
-                  .join(" · ")
-              : "Cargá el ticket diario de la terminal"}
-            {missing.length ? ` · ${missing.length} día(s) sin ticket` : ""}
-          </span>
+          <span className="small muted">Total en todos los medios, hoy</span>
+          <strong className={`big-number ${total.isNegative() ? "error" : ""}`}>{money(total.toString())}</strong>
         </div>
-        <span className="chevron" aria-hidden="true">
-          ›
-        </span>
-      </Link>
-
-      <section className="stack-sm">
-        <h2>Medios de cobro</h2>
-        <ul className="list">
-          {funds.map(({ fund, balance }) => (
-            <li key={fund.id} className="card stack-sm">
-              <div className="row">
-                <div className="stack-xs">
-                  <strong className={fund.active ? "" : "muted"}>{fund.name}</strong>
-                  <span className="small muted">
-                    {FUND_KIND_LABEL[fund.kind]}
-                    {fund.provider ? ` · ${fund.provider}` : ""}
-                    {fund.alias ? ` · alias ${fund.alias}` : ""}
-                    {!fund.active ? " · pausado" : ""}
+        <ul className="list plain">
+          {funds
+            .filter(({ fund }) => fund.active)
+            .map(({ fund, balance }) => (
+              <li key={fund.id}>
+                <Link href={`?medio=${fund.id}#movimientos`} className="row exception-row link" scroll={false}>
+                  <span className="small">
+                    {fund.name}
+                    {fund.settlesAgencyId ? <span className="muted"> · cuenta del legajo</span> : null}
                   </span>
-                  {fund.reference && <span className="small muted">{fund.reference}</span>}
-                </div>
-                <strong className={balance.isNegative() ? "error" : ""}>{money(balance.toString())}</strong>
-              </div>
-              <div className="tags">
-                <Link href={`?medio=${fund.id}#movimientos`} className="tag" scroll={false}>
-                  Ver movimientos
+                  <strong className={`small ${balance.isNegative() ? "error" : ""}`}>{money(balance.toString())}</strong>
                 </Link>
-                {fund.showToCustomers && <span className="tag ok">Se muestra a clientes</span>}
-              </div>
-              <details>
-                <summary className="small">Editar datos</summary>
-                <div className="stack-sm spaced">
-                  <EditFundForm
-                    action={updateFundAction.bind(null, fund.id)}
-                    kind={fund.kind}
-                    today={today}
-                    values={{
-                      name: fund.name,
-                      provider: fund.provider,
-                      holderName: fund.holderName,
-                      cbuCvu: fund.cbuCvu,
-                      alias: fund.alias,
-                      merchantNumber: fund.merchantNumber,
-                      accountNumber: fund.accountNumber,
-                      reference: fund.reference,
-                      showToCustomers: fund.showToCustomers,
-                      openingBalance: fund.openingBalance.toString(),
-                      openingDate: iso(fund.openingDate),
-                    }}
-                  />
-                  {fund.kind !== "BANK_ACCOUNT" && (
-                    <form action={setFundActive.bind(null, fund.id, !fund.active)}>
-                      <button type="submit" className="btn btn-secondary btn-sm">
-                        {fund.active ? "Pausar este medio" : "Reactivar"}
-                      </button>
-                    </form>
-                  )}
-                </div>
-              </details>
-            </li>
-          ))}
+              </li>
+            ))}
         </ul>
-        <details className="card">
-          <summary>Agregar medio de cobro</summary>
-          <div className="spaced">
-            <NewFundForm action={createFundAction.bind(null, agencyId)} today={today} />
-          </div>
-        </details>
+        <Link href={`/panel/agencias/${agencyId}/medios`} className="link small">
+          Configurar medios de cobro
+        </Link>
       </section>
 
       <section className="card stack-sm">

@@ -256,7 +256,7 @@ export async function createOwnerProduct(
       message: "Solo los dueños de un grupo de agencias cargan productos.",
     };
 
-  let productId: string;
+  let productName: string;
   try {
     const name = str(form, "name");
     if (name.length < 2)
@@ -298,14 +298,15 @@ export async function createOwnerProduct(
       await prisma.ownerProduct.delete({ where: { id: product.id } }); // no product without a valid price
       throw err;
     }
-    productId = product.id;
+    productName = product.name;
   } catch (err) {
     if (err instanceof CatalogValidationError)
       return { ok: false, message: err.message };
     throw err;
   }
   revalidatePath("/panel", "layout");
-  redirect(`/panel/productos/${productId}`);
+  // Stays on the list (Productos y precios), where the new product shows up as a panel.
+  return { ok: true, message: `«${productName}» agregado.` };
 }
 
 export async function updateOwnerProduct(
@@ -368,14 +369,43 @@ export async function setOwnerProductAgencies(
       throw new CatalogValidationError(
         "Elegí al menos una agencia, o pausá el producto.",
       );
+    // Remove the unchecked agencies and add the new ones; kept rows keep their "se vende en web".
     await prisma.$transaction([
-      prisma.ownerProductAgency.deleteMany({ where: { productId } }),
+      prisma.ownerProductAgency.deleteMany({ where: { productId, agencyId: { notIn: agencyIds } } }),
       prisma.ownerProductAgency.createMany({
         data: agencyIds.map((agencyId) => ({ productId, agencyId })),
+        skipDuplicates: true,
       }),
     ]);
     return `Se ofrece en ${agencyIds.length} agencia(s).`;
   });
+}
+
+/** One agency's switches for an own product (agency Productos screen): owners of its group only. */
+async function requireProductInAgency(productId: string, agencyId: string) {
+  const { product } = await requireProductOwner(productId);
+  const agency = await prisma.agency.findUnique({ where: { id: agencyId }, select: { groupId: true } });
+  if (!agency || agency.groupId !== product.groupId) throw new Forbidden("Esa agencia no es de este grupo.");
+}
+
+/** "Se vende en la agencia" for an own product. Turning it back on offers it on the web too. */
+export async function setOwnerProductAtAgency(productId: string, agencyId: string, offered: boolean) {
+  await requireProductInAgency(productId, agencyId);
+  if (offered)
+    await prisma.ownerProductAgency.upsert({
+      where: { productId_agencyId: { productId, agencyId } },
+      create: { productId, agencyId, onWeb: true },
+      update: { onWeb: true },
+    });
+  else await prisma.ownerProductAgency.deleteMany({ where: { productId, agencyId } });
+  revalidatePath("/panel", "layout");
+}
+
+/** "Se vende en web" for an own product in one agency (only while the agency offers it). */
+export async function setOwnerProductOnWeb(productId: string, agencyId: string, onWeb: boolean) {
+  await requireProductInAgency(productId, agencyId);
+  await prisma.ownerProductAgency.updateMany({ where: { productId, agencyId }, data: { onWeb } });
+  revalidatePath("/panel", "layout");
 }
 
 export async function addOwnerProductPrice(
@@ -419,10 +449,27 @@ export async function setAgencyGameVisible(
   const access = await getAccess();
   if (!access || !canEditAgencyHours(agencyRole(access, agencyId)))
     throw new Forbidden("Solo el dueño elige los juegos.");
+  // Web orders are played at the agency: turning the agency off takes it off the web too, and
+  // turning it back on offers it on both (the web can then be turned off on its own).
   await prisma.agencyGameAvailability.upsert({
     where: { agencyId_gameId: { agencyId, gameId } },
-    create: { agencyId, gameId, visible },
-    update: { visible },
+    create: { agencyId, gameId, visible, onWeb: visible },
+    update: { visible, onWeb: visible },
+  });
+  revalidatePath("/panel", "layout");
+}
+
+/** "Se vende en web" for one official game of the agency (only while it is sold at the agency). */
+export async function setAgencyGameOnWeb(agencyId: string, gameId: string, onWeb: boolean) {
+  const access = await getAccess();
+  if (!access || !canEditAgencyHours(agencyRole(access, agencyId)))
+    throw new Forbidden("Solo el dueño elige los juegos.");
+  const current = await prisma.agencyGameAvailability.findUnique({ where: { agencyId_gameId: { agencyId, gameId } } });
+  if (current && !current.visible) return; // not sold at the agency: cannot be sold on the web
+  await prisma.agencyGameAvailability.upsert({
+    where: { agencyId_gameId: { agencyId, gameId } },
+    create: { agencyId, gameId, visible: true, onWeb },
+    update: { onWeb },
   });
   revalidatePath("/panel", "layout");
 }

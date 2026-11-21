@@ -28,7 +28,7 @@ export async function syncDrive(agencyId: string, _prev: DriveActionState): Prom
   } catch (err) {
     return { ok: false, message: driveErrorMessage(err) };
   } finally {
-    revalidatePath(`/panel/agencias/${agencyId}`);
+    revalidatePath(`/panel/agencias/${agencyId}/datos`);
   }
 }
 
@@ -36,7 +36,7 @@ export async function disconnectDriveAction(agencyId: string, _prev: DriveAction
   const access = await getAccess();
   if (!access || !canManageDrive(agencyRole(access, agencyId))) return NOT_ALLOWED;
   await disconnectDrive(agencyId);
-  revalidatePath(`/panel/agencias/${agencyId}`);
+  revalidatePath(`/panel/agencias/${agencyId}/datos`);
   return { ok: true, message: "Google Drive desconectado. La carpeta y sus imágenes siguen en ese Drive." };
 }
 
@@ -61,7 +61,7 @@ export async function savePictureToDrive(
     if (err instanceof DriveFolderMissingError) {
       return { ok: false, message: "La carpeta de la agencia ya no está en Drive (¿se borró?). Reconectá Google Drive desde la agencia." };
     }
-    revalidatePath(`/panel/agencias/${agencyId}`);
+    revalidatePath(`/panel/agencias/${agencyId}/datos`);
     return { ok: false, message: driveErrorMessage(err) };
   }
 }

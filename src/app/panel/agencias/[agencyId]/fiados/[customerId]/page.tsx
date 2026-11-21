@@ -26,7 +26,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ agenc
   const [{ customer, balance }, open, funds] = await Promise.all([
     customerDetail(customerId),
     openSessionOf(agencyId),
-    prisma.agencyFund.findMany({ where: { agencyId, active: true }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
+    prisma.agencyFund.findMany({ where: { agencyId, active: true, settlesAgencyId: null }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } }),
   ]);
   const person = customer.customer;
   const otherAgencies = person._count.agencies - 1;

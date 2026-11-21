@@ -73,7 +73,7 @@ export default async function IdeaPage({
         caption={suggestedCaption(idea, agencyText)}
         idea={idea}
         agency={agencyText}
-        drive={{ status: driveStatus, agencyHref: `/panel/agencias/${agencyId}` }}
+        drive={{ status: driveStatus, agencyHref: `/panel/agencias/${agencyId}/datos` }}
         saveToDrive={savePictureToDrive.bind(null, agencyId, idea.id)}
       />
     </main>

@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import type { FormState } from "@/app/panel/finanzas/actions";
+import { FormActions } from "@/components/ui/editable-section";
 
 type Action = (prev: FormState, form: FormData) => Promise<FormState>;
 type FundKind = "CASH" | "BANK_ACCOUNT" | "DIGITAL_WALLET" | "CARD_TERMINAL" | "OTHER";
@@ -16,6 +17,7 @@ function Result({ state }: { state: FormState }) {
 }
 
 const KIND_OPTIONS: { value: FundKind; label: string }[] = [
+  { value: "BANK_ACCOUNT", label: "Cuenta bancaria (donde te transfieren los clientes)" },
   { value: "DIGITAL_WALLET", label: "Billetera virtual (Mercado Pago, Cuenta DNI, MODO…)" },
   { value: "CARD_TERMINAL", label: "Posnet / tarjetas" },
   { value: "CASH", label: "Otra caja de efectivo" },
@@ -37,10 +39,11 @@ type FundValues = {
 };
 
 /** Fields of a payment method for its type. Used to create and to edit. */
-function FundFields({ kind, values, today }: { kind: FundKind; values?: FundValues; today: string }) {
+function FundFields({ kind, values, today, legajo = false }: { kind: FundKind; values?: FundValues; today: string; legajo?: boolean }) {
   const bankLike = kind === "BANK_ACCOUNT" || kind === "DIGITAL_WALLET";
   return (
     <>
+      <div className={kind === "CASH" ? "stack-sm" : "grid-2"}>
       <label className="field">
         <span className="small muted">Nombre</span>
         <input
@@ -64,6 +67,7 @@ function FundFields({ kind, values, today }: { kind: FundKind; values?: FundValu
           />
         </label>
       )}
+      </div>
       {bankLike && (
         <>
           <label className="field">
@@ -82,7 +86,7 @@ function FundFields({ kind, values, today }: { kind: FundKind; values?: FundValu
           </div>
         </>
       )}
-      {kind === "BANK_ACCOUNT" && (
+      {legajo && (
         <label className="field">
           <span className="small muted">N.º de cuenta (como figura en el ticket de Lotería)</span>
           <input name="accountNumber" className="input" maxLength={30} defaultValue={values?.accountNumber ?? ""} placeholder="C.A. 12345/0" />
@@ -104,17 +108,21 @@ function FundFields({ kind, values, today }: { kind: FundKind; values?: FundValu
           placeholder="La cuenta que usamos para premios"
         />
       </label>
-      <div className="grid-2">
-        <label className="field">
-          <span className="small muted">Saldo inicial ($)</span>
-          <input name="openingBalance" className="input" inputMode="decimal" defaultValue={values?.openingBalance ?? "0"} />
-        </label>
-        <label className="field">
-          <span className="small muted">al día</span>
-          <input type="date" name="openingDate" className="input" defaultValue={values?.openingDate ?? today} required />
-        </label>
-      </div>
-      {kind !== "CASH" && (
+      {/* Only the legajo's account takes an opening balance (Datos). Payment methods start at $0
+          the day they are added, and cash is set by the first cash session's count. */}
+      {legajo && (
+        <div className="grid-2">
+          <label className="field">
+            <span className="small muted">Saldo inicial ($)</span>
+            <input name="openingBalance" className="input" inputMode="decimal" defaultValue={values?.openingBalance ?? "0"} />
+          </label>
+          <label className="field">
+            <span className="small muted">al día</span>
+            <input type="date" name="openingDate" className="input" defaultValue={values?.openingDate ?? today} required />
+          </label>
+        </div>
+      )}
+      {kind !== "CASH" && !legajo && (
         <label className="check">
           <input type="checkbox" name="showToCustomers" defaultChecked={values?.showToCustomers} />
           <span>Mostrar estos datos a los clientes para pagar</span>
@@ -140,15 +148,13 @@ export function NewFundForm({ action, today }: { action: Action; today: string }
         </select>
       </label>
       <FundFields key={kind} kind={kind} today={today} />
-      <button type="submit" className="btn btn-primary" disabled={pending}>
-        {pending ? "Guardando…" : "Agregar medio de cobro"}
-      </button>
-      <Result state={state} />
+      <FormActions state={state} pending={pending} submitLabel="Agregar" />
     </form>
   );
 }
 
 export function EditFundForm({
+  legajo = false,
   action,
   kind,
   values,
@@ -158,15 +164,13 @@ export function EditFundForm({
   kind: FundKind;
   values: FundValues;
   today: string;
+  legajo?: boolean; // the legajo's account: shows the C.A. number, never offered to customers
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   return (
     <form action={formAction} className="stack-sm">
-      <FundFields kind={kind} values={values} today={today} />
-      <button type="submit" className="btn btn-primary" disabled={pending}>
-        {pending ? "Guardando…" : "Guardar datos"}
-      </button>
-      <Result state={state} />
+      <FundFields kind={kind} values={values} today={today} legajo={legajo} />
+      <FormActions state={state} pending={pending} />
     </form>
   );
 }

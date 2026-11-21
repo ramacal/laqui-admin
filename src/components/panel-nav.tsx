@@ -38,15 +38,30 @@ export type NavAgency = {
   badge: string | null;
 };
 
-const AGENCY_SECTIONS: NavLink[] = [
-  { href: "", label: "Resumen" },
-  { href: "/caja", label: "Caja" },
-  { href: "/fiados", label: "Fiados" },
-  { href: "/finanzas", label: "Finanzas" },
-  { href: "/liquidaciones", label: "Liquidaciones" },
-  { href: "/horario", label: "Horario" },
-  { href: "/productos", label: "Productos" },
-  { href: "/personal", label: "Personal" },
+// The agency's sections, in three blocks: how it is doing (estado), the day-to-day loading
+// (operatoria) and what rarely changes (configuración).
+const AGENCY_SECTIONS: { title: string | null; links: NavLink[] }[] = [
+  { title: null, links: [{ href: "", label: "Estado" }] },
+  {
+    title: "Operatoria",
+    links: [
+      { href: "/caja", label: "Caja diaria" },
+      { href: "/fiados", label: "Fiados" },
+      { href: "/liquidaciones", label: "Liquidaciones" },
+      { href: "/finanzas", label: "Movimientos" },
+      { href: "/redes", label: "Redes" },
+    ],
+  },
+  {
+    title: "Configuración",
+    links: [
+      { href: "/datos", label: "Datos" },
+      { href: "/medios", label: "Medios de cobro" },
+      { href: "/horario", label: "Horario" },
+      { href: "/productos", label: "Productos" },
+      { href: "/personal", label: "Personal" },
+    ],
+  },
 ];
 
 const isActive = (pathname: string, href: string) =>
@@ -163,22 +178,27 @@ export function PanelNav({
                     </Link>
                     {inside && (
                       <div className="nav-sub">
-                        {AGENCY_SECTIONS.map((s) => {
-                          const href = `${base}${s.href}`;
-                          const active =
-                            s.href === ""
-                              ? pathname === base
-                              : isActive(pathname, href);
-                          return (
-                            <Link
-                              key={s.label}
-                              href={href}
-                              className={`nav-link ${active ? "is-active" : ""}`}
-                            >
-                              {s.label}
-                            </Link>
-                          );
-                        })}
+                        {AGENCY_SECTIONS.map((block, i) => (
+                          <div key={block.title ?? i} className="nav-sub-block">
+                            {block.title && <span className="nav-sub-title">{block.title}</span>}
+                            {block.links.map((s) => {
+                              const href = `${base}${s.href}`;
+                              const active =
+                                s.href === ""
+                                  ? pathname === base
+                                  : isActive(pathname, href);
+                              return (
+                                <Link
+                                  key={s.label}
+                                  href={href}
+                                  className={`nav-link ${active ? "is-active" : ""}`}
+                                >
+                                  {s.label}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

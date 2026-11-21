@@ -1,10 +1,14 @@
-import Link from "next/link";
 import { currentGroupId, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { agenciesOfGroup, getWeek, todayIn, upcomingExceptions, upcomingHolidays, type Week } from "@/lib/schedule";
 import { WeeklyHoursEditor } from "@/components/schedule/weekly-hours-editor";
 import { ExceptionForm } from "@/components/schedule/exception-form";
-import { ExceptionsList, HolidaysList } from "@/components/schedule/schedule-lists";
+import { CloseAllHolidaysButton, ExceptionsList, HolidaysList, WeekList } from "@/components/schedule/schedule-lists";
+import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { EditableSection } from "@/components/ui/editable-section";
+import { PageHeader } from "@/components/ui/page-header";
+import { SettingsPage, SettingsSection } from "@/components/ui/settings-section";
 import { addException, saveGeneralWeek } from "./actions";
 
 export const metadata = { title: "Horario general · Laqui" };
@@ -22,11 +26,7 @@ export default async function GeneralSchedulePage({ searchParams }: { searchPara
   if (!groupId || agencies.length === 0) {
     return (
       <main className="screen">
-        <Link href="/panel" className="back">
-          ← Panel
-        </Link>
-        <h1>Horario general</h1>
-        <p className="card muted">El horario general es para los dueños de un grupo de agencias.</p>
+        <PageHeader title="Horario general" subtitle="El horario general es para los dueños de un grupo de agencias." />
       </main>
     );
   }
@@ -39,61 +39,74 @@ export default async function GeneralSchedulePage({ searchParams }: { searchPara
     scope ? upcomingExceptions(scope, today) : Promise.resolve([]),
     upcomingHolidays(scope ? [scope] : [], today),
   ]);
+  const pendingHolidays = holidays.filter((h) => !h.covered).length;
+  const empty = week.every((d) => d.length === 0);
+  const own = agencies.filter((a) => !(general && a.scheduleTemplateId === general.id && !a.customHours));
+  const users = agencies.length - own.length;
 
   return (
     <main className="screen">
-      <Link href="/panel" className="back">
-        ← Panel
-      </Link>
-      <div className="stack-xs">
-        <h1>Horario general</h1>
-        <p className="muted small">
-          Lo heredan todas tus agencias. Si cambiás el horario de una agencia en particular, esa queda personalizada y el
-          resto sigue usando este.
-        </p>
-      </div>
+      <PageHeader
+        title="Horario general"
+        subtitle={`El horario del grupo de agencias: lo heredan ${agencies.length === 1 ? "tu agencia" : `tus ${agencies.length} agencias`}.`}
+      />
 
-      <section className="stack-sm">
-        <h2>Horario semanal</h2>
-        <WeeklyHoursEditor initial={week} action={saveGeneralWeek.bind(null, groupId)} />
-      </section>
+      <SettingsPage>
+        <EditableSection
+          title="Horario semanal por defecto"
+          description={
+            <>
+              Los días y horas en que abren tus agencias habitualmente. Si cambiás el horario de una agencia en
+              particular, esa queda personalizada y las demás siguen usando este.
+              {own.length > 0 && (
+                <>
+                  {" "}
+                  Con horario propio:{" "}
+                  {own.map((a, i) => (
+                    <span key={a.id}>
+                      {i > 0 && ", "}
+                      <Link href={`/panel/agencias/${a.id}/horario`} className="font-semibold text-primary hover:underline">
+                        {a.name}
+                      </Link>
+                    </span>
+                  ))}
+                  .
+                </>
+              )}
+            </>
+          }
+          empty={empty}
+          status={
+            <Badge tone={own.length === 0 ? "success" : "warning"}>
+              {users === agencies.length
+                ? agencies.length === 1
+                  ? "Lo usa tu agencia"
+                  : `Lo usan las ${agencies.length} agencias`
+                : `Lo usan ${users} de ${agencies.length} agencias`}
+            </Badge>
+          }
+          view={<WeekList week={week} />}
+        >
+          <WeeklyHoursEditor initial={week} action={saveGeneralWeek.bind(null, groupId)} />
+        </EditableSection>
 
-      <section className="card stack-sm">
-        <h2>Agencias</h2>
-        <ul className="list plain">
-          {agencies.map((a) => {
-            const inherits = Boolean(general && a.scheduleTemplateId === general.id && !a.customHours);
-            return (
-              <li key={a.id} className="row exception-row">
-                <Link href={`/panel/agencias/${a.id}/horario`} className="link small">
-                  {a.name}
-                </Link>
-                <span className={`small ${inherits ? "muted" : "warn"}`}>
-                  {!general ? "Sin horario general" : inherits ? "Usa el horario general" : "Personalizado"}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+        <EditableSection
+          title="Excepciones"
+          description="Valen para todas tus agencias. Cada agencia puede cambiarlas o agregar las suyas."
+          addLabel="Agregar excepción"
+          view={<ExceptionsList items={exceptions} canDelete empty="No hay excepciones próximas." />}
+        >
+          <ExceptionForm action={addException.bind(null, "general", groupId)} today={today} />
+        </EditableSection>
 
-      <section className="card stack-sm">
-        <h2>Excepciones</h2>
-        <p className="muted small">Valen para todas tus agencias. Cada agencia puede cambiarlas o agregar las suyas.</p>
-        <ExceptionsList items={exceptions} canDelete />
-        <details>
-          <summary>Agregar excepción</summary>
-          <div className="spaced">
-            <ExceptionForm action={addException.bind(null, "general", groupId)} today={today} />
-          </div>
-        </details>
-      </section>
-
-      <section className="card stack-sm">
-        <h2>Próximos feriados</h2>
-        <p className="muted small">Los feriados no cierran solos: elegí en cuáles cierran tus agencias.</p>
-        <HolidaysList items={holidays} scope={{ kind: "general", id: groupId }} canEdit />
-      </section>
+        <SettingsSection
+          title="Próximos feriados"
+          description="Los feriados no cierran solos: elegí en cuáles cierran tus agencias."
+          actions={pendingHolidays > 1 ? <CloseAllHolidaysButton scope={{ kind: "general", id: groupId }} /> : undefined}
+        >
+          <HolidaysList items={holidays} scope={{ kind: "general", id: groupId }} canEdit />
+        </SettingsSection>
+      </SettingsPage>
     </main>
   );
 }

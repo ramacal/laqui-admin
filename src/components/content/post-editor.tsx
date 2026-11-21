@@ -104,7 +104,7 @@ export function PostEditor({ imageBase, date, headline: suggested, caption: sugg
               ? "Hay que reconectar el Google Drive de la agencia para guardar imágenes ahí. "
               : "Conectá el Google Drive de la agencia para guardar las imágenes ahí. "}
             <a href={drive.agencyHref} className="link">
-              Ir a la agencia
+              Ir a los datos de la agencia
             </a>
           </p>
         ) : null}

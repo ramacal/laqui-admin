@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { agencyRole, requireAccess } from "@/lib/access";
-import { SHIFT_LABEL, agencySessions, openSessionOf, suggestShift, suggestedOpeningCash } from "@/lib/cash";
+import { SHIFT_LABEL, agencySessions, openSessionOf, openingCashFor, suggestShift } from "@/lib/cash";
 import { prisma } from "@/lib/prisma";
 import { todayIn } from "@/lib/schedule";
 import { money } from "@/components/products/price-parts";
@@ -22,12 +22,12 @@ export default async function CashPage({ params }: { params: Promise<{ agencyId:
 
   const today = todayIn(agency.timezone);
   const from = new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86_400_000).toISOString().slice(0, 10);
-  const [open, shift, opening, sessions] = await Promise.all([
+  const [open, shift, sessions] = await Promise.all([
     openSessionOf(agencyId),
     suggestShift(agencyId, today),
-    suggestedOpeningCash(agencyId),
     agencySessions(agencyId, from),
   ]);
+  const opening = await openingCashFor(agencyId, today, shift ?? "MORNING");
 
   return (
     <main className="screen">
@@ -47,7 +47,7 @@ export default async function CashPage({ params }: { params: Promise<{ agencyId:
             <strong>
               Caja abierta · {SHIFT_LABEL[open.shift]} del {fmt(open.date)}
             </strong>
-            <span className="small">Cambio inicial {money(open.openingCash.toString())} · cargá movimientos y cerrala</span>
+            <span className="small">Efectivo inicial {money(open.openingCash.toString())} · cargá movimientos y cerrala</span>
           </div>
           <span className="chevron" aria-hidden="true">
             ›
@@ -71,10 +71,26 @@ export default async function CashPage({ params }: { params: Promise<{ agencyId:
                 </select>
               </label>
             </div>
-            <label className="field">
-              <span className="small muted">Cambio inicial ($): el efectivo con el que arranca la caja</span>
-              <input name="openingCash" className="input" inputMode="decimal" defaultValue={opening.toString()} required />
-            </label>
+            {opening.locked ? (
+              // From the second caja on, it is what the previous one closed with (lib/cash openingCashFor).
+              <div className="field">
+                <span className="small muted">Efectivo inicial: el cambio con el que arranca la caja</span>
+                <strong>{money(opening.amount.toString())}</strong>
+                <span className="small muted">
+                  Lo que quedó al cerrar la caja de {SHIFT_LABEL[opening.previous.shift].toLowerCase()} del{" "}
+                  {fmt(opening.previous.date)}. Si sacaron o pusieron plata entre turnos, cargalo como movimiento.
+                </span>
+              </div>
+            ) : (
+              <label className="field">
+                <span className="small muted">Efectivo inicial ($): el cambio con el que arranca la caja</span>
+                <input name="openingCash" className="input" inputMode="decimal" defaultValue="0" required />
+                <span className="small muted">
+                  Es la primera caja de la agencia: contá el efectivo del cajón. Desde la próxima, sale de lo contado al
+                  cerrar la anterior.
+                </span>
+              </label>
+            )}
           </SimpleForm>
         </section>
       )}

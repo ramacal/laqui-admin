@@ -26,7 +26,7 @@ export default async function SettlementsPage({ params }: { params: Promise<{ ag
 
   const agency = await prisma.agency.findUnique({
     where: { id: agencyId },
-    select: { name: true, funds: { where: { kind: "BANK_ACCOUNT" }, select: { accountNumber: true } } },
+    select: { name: true, funds: { where: { settlesAgencyId: agencyId }, select: { accountNumber: true } } },
   });
   if (!agency) notFound();
 
@@ -40,13 +40,13 @@ export default async function SettlementsPage({ params }: { params: Promise<{ ag
 
   return (
     <main className="screen">
-      <Link href={`/panel/agencias/${agencyId}/finanzas`} className="back">
-        ← Finanzas de {agency.name}
+      <Link href={`/panel/agencias/${agencyId}`} className="back">
+        ← {agency.name}
       </Link>
       <div className="stack-xs">
         <h1>Liquidaciones de Lotería</h1>
         <p className="muted small">
-          El ticket diario de la terminal: queda registrado en la cuenta bancaria con fecha de vencimiento.
+          El ticket diario de la terminal: queda registrado en la cuenta del legajo con fecha de vencimiento.
         </p>
       </div>
 
