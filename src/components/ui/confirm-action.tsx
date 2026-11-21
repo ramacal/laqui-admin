@@ -18,10 +18,10 @@ export function ConfirmAction({
   icon?: ReactNode;
   question: ReactNode; // "Deja de ver las agencias del grupo."
   confirmLabel: string; // "Sí, sacar"
-  action: (prev: FormState, form: FormData) => Promise<FormState>;
+  action: (prev: FormState, form: FormData) => Promise<FormState | void>; // void: plain server actions
 }) {
   const [asking, setAsking] = useState(false);
-  const [state, formAction, pending] = useActionState(action, null);
+  const [state, formAction, pending] = useActionState(async (prev: FormState, form: FormData) => (await action(prev, form)) ?? null, null);
 
   if (!asking)
     return (
