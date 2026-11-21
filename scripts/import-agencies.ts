@@ -7,6 +7,7 @@ import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/prisma";
 import { ensureGeneral, getWeek, linkUnscheduledAgencies, replaceWeek, type Week } from "../src/lib/schedule";
+import { syncDriveAccess } from "../src/lib/drive/sharing";
 
 type EmployeeInput = {
   firstName: string;
@@ -57,7 +58,7 @@ async function enableProvinceCatalog(provinceId: string) {
       update: {},
     });
   }
-  const lotteries = await prisma.lottery.findMany({ orderBy: { code: "asc" } });
+  const lotteries = await prisma.lottery.findMany({ where: { quinielaDraws: true }, orderBy: { code: "asc" } });
   for (const [i, lottery] of lotteries.entries()) {
     await prisma.provinceLotteryAvailability.upsert({
       where: { provinceId_lotteryId: { provinceId, lotteryId: lottery.id } },
@@ -163,6 +164,20 @@ async function main() {
   }
 
   const slugs = data.agencies.map((a) => a.slug);
+
+  // Staff changed: keep each connected agency's Drive folder shared with its active staff.
+  const connected = await prisma.agencyDriveConnection.findMany({
+    where: { status: "ACTIVE", agency: { slug: { in: slugs } } },
+    select: { agencyId: true, agency: { select: { name: true } } },
+  });
+  for (const c of connected) {
+    try {
+      const r = await syncDriveAccess(c.agencyId);
+      if (r) console.log(`Drive ${c.agency.name}: +${r.added} -${r.removed}${r.failed ? `, ${r.failed} sin poder compartir` : ""}`);
+    } catch (err) {
+      console.warn(`Drive ${c.agency.name}: no se pudo sincronizar`, err);
+    }
+  }
   const summary = await prisma.agency.findMany({
     where: { slug: { in: slugs } },
     select: { name: true, licenseNumber: true, _count: { select: { employees: true } } },

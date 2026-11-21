@@ -12,6 +12,8 @@
 import "dotenv/config";
 import { Prisma } from "../src/generated/prisma/client";
 import { prisma } from "../src/lib/prisma";
+import { CONTENT_IDEAS, NUMBER_MEANINGS } from "./data/content-ideas";
+import { LOTTERIES } from "./data/lotteries";
 
 // ─── Reference: games ─────────────────────────────────────────
 
@@ -89,15 +91,6 @@ const PROVINCES: [code: string, name: string][] = [
 
 // ─── Reference: Quiniela lotteries ─────────────────────────────
 
-const LOTTERIES: [code: string, name: string][] = [
-  ["CIUDAD", "Ciudad"],
-  ["PROVINCIA", "Provincia"],
-  ["SANTA_FE", "Santa Fe"],
-  ["CORDOBA", "Córdoba"],
-  ["ENTRE_RIOS", "Entre Ríos"],
-  ["MENDOZA", "Mendoza"],
-  ["MONTEVIDEO", "Montevideo"],
-];
 
 // ─── DEMO data ─────────────────────────────────────────────────
 
@@ -149,12 +142,25 @@ async function seedGames() {
   }
 }
 
+const COUNTRIES: [code: string, name: string][] = [
+  ["AR", "Argentina"],
+  ["UY", "Uruguay"],
+];
+
 async function seedProvincesAndLotteries() {
-  for (const [code, name] of PROVINCES) {
-    await prisma.province.upsert({ where: { code }, create: { code, name }, update: { name } });
+  for (const [code, name] of COUNTRIES) {
+    await prisma.country.upsert({ where: { code }, create: { id: `country_${code.toLowerCase()}`, code, name }, update: { name } });
   }
-  for (const [code, name] of LOTTERIES) {
-    await prisma.lottery.upsert({ where: { code }, create: { code, name }, update: { name } });
+  const countryIds = new Map((await prisma.country.findMany()).map((c) => [c.code, c.id]));
+  const argentina = countryIds.get("AR")!;
+  for (const [code, name] of PROVINCES) {
+    await prisma.province.upsert({ where: { code }, create: { code, name, countryId: argentina }, update: { name } });
+  }
+  const provinceIds = new Map((await prisma.province.findMany({ select: { id: true, code: true } })).map((p) => [p.code, p.id]));
+  // Logos are not downloaded here: `npm run lotteries:logos`. Admin edits to names/brand are kept.
+  for (const { code, logoUrl: _logo, country, province, ...l } of LOTTERIES) {
+    const where = { countryId: countryIds.get(country)!, provinceId: province ? (provinceIds.get(province) ?? null) : null };
+    await prisma.lottery.upsert({ where: { code }, create: { code, ...l, ...where }, update: where });
   }
 }
 
@@ -243,6 +249,31 @@ async function seedDemoAgency() {
   });
 }
 
+
+// ─── Reference: social content (spec social-content) ─────────
+
+async function seedContent() {
+  for (const m of NUMBER_MEANINGS) {
+    await prisma.quinielaNumberMeaning.upsert({
+      where: { number: m.number },
+      create: m,
+      update: {}, // admins may have edited meanings: keep them
+    });
+  }
+  const provinces = new Map((await prisma.province.findMany({ select: { id: true, code: true } })).map((p) => [p.code, p.id]));
+  const argentina = (await prisma.country.findUniqueOrThrow({ where: { code: "AR" } })).id;
+  for (const { key, numbers = [], province, ...idea } of CONTENT_IDEAS) {
+    const data = { ...idea, countryId: argentina, provinceId: province ? (provinces.get(province) ?? null) : null };
+    const saved = await prisma.contentIdea.upsert({
+      where: { source_sourceKey: { source: "SEED", sourceKey: key } },
+      create: { ...data, source: "SEED", sourceKey: key },
+      update: data,
+    });
+    await prisma.contentIdeaNumber.deleteMany({ where: { ideaId: saved.id } });
+    if (numbers.length) await prisma.contentIdeaNumber.createMany({ data: numbers.map((n) => ({ ...n, ideaId: saved.id })) });
+  }
+}
+
 async function seedPlatformAdmin() {
   await prisma.user.upsert({
     where: { email: PLATFORM_ADMIN_EMAIL },
@@ -257,6 +288,7 @@ async function main() {
   await seedProvincesAndLotteries();
   await seedDemoProvince();
   await seedDemoAgency();
+  await seedContent();
 
   const counts = {
     games: await prisma.gameDefinition.count(),
@@ -270,6 +302,8 @@ async function main() {
     employees: await prisma.agencyEmployee.count(),
     users: await prisma.user.count(),
     scheduleRules: await prisma.agencyScheduleRule.count(),
+    contentIdeas: await prisma.contentIdea.count(),
+    numberMeanings: await prisma.quinielaNumberMeaning.count(),
   };
   console.log("Seed OK", counts);
 }

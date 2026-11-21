@@ -167,14 +167,20 @@ Placeholders marked `TODO confirm` in the seed: Quini 6 price, Quiniela minimum 
 
 ## File Storage
 
-- **Where:** S3-compatible object storage. Local: SeaweedFS 4.51 in `docker-compose.yml` (MinIO no longer publishes Docker images). Production: S3, Cloudflare R2 or Supabase Storage (same code, different env vars). The database stores only the object key and metadata, never the file.
-- **Buckets:** `laqui-public` (logos, employee photos for social media; anonymous read) and `laqui-private` (payment receipts, ticket photos; signed URLs only).
-- **Layout (both buckets), one folder per agency by province and legajo:**
-  - `agencias/{provincia}/{legajo}/logo/{tipo}.{ext}`
-  - `agencias/{provincia}/{legajo}/empleados/{employeeId}/foto.{ext}`
-  - `agencias/{provincia}/{legajo}/comprobantes/{yyyy}/{mm}/{orderId}/{fileId}.{ext}` (private)
-  - `agencias/{provincia}/{legajo}/boletas/{yyyy}/{mm}/{orderId}/{fileId}.{ext}` (private)
+- **Where:** Cloudflare R2 (S3 API). The database stores only the object key and metadata, never the file. Files are kept in a bucket rather than MySQL because R2 storage is far cheaper per GB, has no egress fee, and keeps the database and its backups small.
+- **Local simulation of R2** (`docker-compose.yml`): SeaweedFS 4.51 is the S3 API on `localhost:8333` and always requires credentials, for both buckets, as R2 does. A read-only nginx (`storage-public`, `localhost:8334`) plays the public bucket's domain (R2's r2.dev or custom domain): files only, no folder listings, no query parameters, no writes, nothing from the private bucket. `STORAGE_REGION=auto` and `STORAGE_PUBLIC_URL` carries no bucket name, as with R2. `npm run storage:init` checks these rules.
+- **Buckets:** `laqui-public` (logos, employee photos for social media, pictures; read through the public domain) and `laqui-private` (payment receipts, ticket photos, settlements; signed URLs only).
+- **Versioned public names:** every public upload gets a new name (`-{version}`, a timestamp) and is cached as immutable. The previous file is deleted after the database points to the new one.
+- **Naming rule (bucket and Drive):** every key segment and file name is lowercase, with no accents or ñ, words joined by `-` and only `a-z 0-9` (`src/lib/names.ts`), extensions included (`.PNG` becomes `.png`). Ids (cuid) already follow it.
+- **Layout.** An agency has one folder by province and legajo, and the same path is used in both buckets. It is grouped by purpose:
+  - `agencias/{provincia}/{legajo}/marca/{simbolo|logo|perfil}-{v}.{ext}` (public, `AgencyAsset`)
+  - `agencias/{provincia}/{legajo}/equipo/{employeeId}/foto-{v}.{ext}` (public)
+  - `agencias/{provincia}/{legajo}/pedidos/{yyyy}/{mm}/{orderId}/comprobante-{fileId}.{ext}` (private): everything an order produces stays together.
+  - `agencias/{provincia}/{legajo}/pedidos/{yyyy}/{mm}/{orderId}/boleta-{fileId}.{ext}` (private)
+  - `agencias/{provincia}/{legajo}/finanzas/liquidaciones/{yyyy}/{mm}/{fecha}-{fileId}.{ext}` (private)
+  - `agencias/{provincia}/{legajo}/finanzas/movimientos/{yyyy}/{mm}/{movementId}.{ext}` (private)
   - Agencies without a legajo yet use `pendiente-{agencyId}` instead of the legajo.
+- **Owner and platform files:** `duenos/{ownerUserId}/productos/{productId}/imagen-{v}.webp` (an owner product is shared by that owner's agencies), `juegos/{juego}/imagen-{v}.webp`, `loterias/{loteria}/logo-{v}.png`, `quiniela/significados/{nn}-{v}.{ext}` (public), `provincias/{provincia}/quiniela/programas/{yyyy}-{mm}-v{n}.pdf` (private).
 - **Keys are stored as written:** if a legajo changes, existing files keep working; new uploads use the new folder.
 - **Models:** `AgencyAsset` (logo variants, replaces `Agency.logoUrl`), `Receipt` (customer payment proof), `BetTicket` (tentative: photo of the printed ticket sent to the customer).
 
@@ -203,4 +209,4 @@ Placeholders marked `TODO confirm` in the seed: Quini 6 price, Quiniela minimum 
 - `FundMovement`: date, direction, positive amount (DB check), kind (Lotería debit/credit, customer payment, prize payout, expense, transfer, adjustment, other), description, reference, source (manual now; Lotería ticket and cash closing later), creator, `voidedAt` (never deleted). Transfers are two movements sharing `transferId`; voiding one voids both.
 - Balance = opening + IN − OUT of non-voided movements between the opening date and the given date (`src/lib/finance.ts`), never stored. Owner totals sum their agencies.
 - Money input accepts Argentine format ("1.500,50").
-- **Lotería settlement ticket:** the terminal prints daily "VTO dd/mm/aa — EL SALDO $X SERA DEBITADO DE SU C.A. nnnnn/n" with print date/time (no breakdown). `LotterySettlement` (one per agency and issue date) stores issue date, VTO, amount, debit/credit, account number and an optional private photo (`agencias/{prov}/{legajo}/liquidaciones/{yyyy}/{mm}/…`). It owns one bank movement dated on the VTO (upcoming until then); edits update it, voiding voids it. The bank payment method stores `accountNumber` to warn when the ticket's account differs. Missing weekdays (Mon–Sat, since the bank account opening date) are flagged.
+- **Lotería settlement ticket:** the terminal prints daily "VTO dd/mm/aa — EL SALDO $X SERA DEBITADO DE SU C.A. nnnnn/n" with print date/time (no breakdown). `LotterySettlement` (one per agency and issue date) stores issue date, VTO, amount, debit/credit, account number and an optional private photo (`agencias/{prov}/{legajo}/finanzas/liquidaciones/{yyyy}/{mm}/…`). It owns one bank movement dated on the VTO (upcoming until then); edits update it, voiding voids it. The bank payment method stores `accountNumber` to warn when the ticket's account differs. Missing weekdays (Mon–Sat, since the bank account opening date) are flagged.

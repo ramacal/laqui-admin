@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 // Allow next/image to load public files (agency logos) from the storage bucket.
-const storage = new URL(process.env.STORAGE_PUBLIC_URL ?? "http://localhost:8333/laqui-public");
+const storage = new URL(process.env.STORAGE_PUBLIC_URL ?? "http://localhost:8334");
 
 const nextConfig: NextConfig = {
   // pdf.js reads the Quiniela program PDF on the server; load it from node_modules as is.

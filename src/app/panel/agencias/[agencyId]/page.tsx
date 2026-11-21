@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ROLE_LABEL, agencyRole, canViewStaff, requireAccess } from "@/lib/access";
+import { ROLE_LABEL, agencyRole, canManageDrive, canViewStaff, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { publicUrl } from "@/lib/storage";
 import { formatRanges, isAgencyOpen } from "@/lib/schedule";
@@ -9,6 +9,7 @@ import { agencyCatalog } from "@/lib/catalog";
 import { agencyBalances } from "@/lib/finance";
 import { money } from "@/components/products/price-parts";
 import { OwnerEmailForm } from "@/components/owner-email-form";
+import { DriveCard } from "@/components/drive/drive-card";
 import { assignOwnerEmail } from "./actions";
 
 export const metadata = { title: "Agencia · Laqui" };
@@ -33,8 +34,15 @@ const formatDate = (d: Date) => d.toLocaleDateString("es-AR", { timeZone: "UTC" 
 
 const SHIFT_LABEL = { MORNING: "Turno mañana", AFTERNOON: "Turno tarde", FULL_DAY: "Jornada completa", ROTATING: "Rotativo" } as const;
 
-export default async function AgencyPage({ params }: { params: Promise<{ agencyId: string }> }) {
+export default async function AgencyPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ agencyId: string }>;
+  searchParams: Promise<{ drive?: string }>;
+}) {
   const { agencyId } = await params;
+  const { drive } = await searchParams;
   const access = await requireAccess();
   const role = agencyRole(access, agencyId);
   if (!role) notFound(); // do not reveal agencies the user cannot see
@@ -167,6 +175,18 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
           ›
         </span>
       </Link>
+
+      <Link href={`/panel/agencias/${agencyId}/redes`} className="card row link-card">
+        <div className="stack-xs">
+          <strong>Redes</strong>
+          <span className="small muted">Ideas para publicar con números para jugar, imágenes con la marca e Instagram</span>
+        </div>
+        <span className="chevron" aria-hidden="true">
+          ›
+        </span>
+      </Link>
+
+      {canManageDrive(role) && <DriveCard agencyId={agencyId} flash={drive} />}
 
       {finances && (
         <Link href={`/panel/agencias/${agencyId}/finanzas`} className="card row link-card">

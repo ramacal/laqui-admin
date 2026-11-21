@@ -78,3 +78,8 @@ export const canEditAgencyHours = (role: EmployeeRole | null) => role === "OWNER
 
 /** Agency exceptions (closures, special hours): owners and agency admins. */
 export const canEditAgencyExceptions = (role: EmployeeRole | null) => role === "OWNER" || role === "ADMIN";
+
+// ─── Agency Google Drive (spec: agency-google-drive) ───────────
+
+/** Connect, disconnect and re-sync the agency's Drive: owners and agency admins. */
+export const canManageDrive = (role: EmployeeRole | null) => role === "OWNER" || role === "ADMIN";

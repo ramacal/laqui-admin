@@ -9,7 +9,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AgencyAssetKind } from "../src/generated/prisma/enums";
 import { prisma } from "../src/lib/prisma";
-import { keys, publicUrl, putFile } from "../src/lib/storage";
+import { deleteFile, keys, publicUrl, putFile } from "../src/lib/storage";
 
 const folder = process.argv[2] ?? "prisma/data/logos";
 const mapping = JSON.parse(readFileSync("prisma/data/agencias.local.json", "utf8")) as {
@@ -55,13 +55,17 @@ async function main() {
     }
 
     const body = new Uint8Array(readFileSync(path));
-    const key = keys.logo(agency, spec.name, ext);
-    await putFile("public", key, body, MIME[ext]);
+    // A new name per upload (cache-safe); the previous file of that kind is removed after the switch.
+    const where = { agencyId_kind: { agencyId: agency.id, kind: spec.kind } };
+    const previous = await prisma.agencyAsset.findUnique({ where, select: { storageKey: true } });
+    const key = keys.brand(agency, spec.name, ext);
+    await putFile("public", key, body, MIME[ext], { immutable: true });
     await prisma.agencyAsset.upsert({
-      where: { agencyId_kind: { agencyId: agency.id, kind: spec.kind } },
+      where,
       create: { agencyId: agency.id, kind: spec.kind, storageKey: key, mimeType: MIME[ext], sizeBytes: body.byteLength },
       update: { storageKey: key, mimeType: MIME[ext], sizeBytes: body.byteLength },
     });
+    if (previous && previous.storageKey !== key) await deleteFile("public", previous.storageKey).catch(() => undefined);
     console.log(`${agency.name}: ${spec.kind} -> ${publicUrl(key)}`);
     uploaded++;
   }

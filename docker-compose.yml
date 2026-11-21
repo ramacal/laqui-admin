@@ -23,18 +23,20 @@ services:
       timeout: 5s
       retries: 20
 
-  # S3-compatible object storage (SeaweedFS). Buckets: laqui-public (anonymous read)
-  # and laqui-private (signed URLs only). Create them with `npm run storage:init`.
+  # Local stand-in for Cloudflare R2 (SeaweedFS, S3-compatible). Like R2:
+  #   - the S3 API (localhost:8333) always needs credentials, for both buckets;
+  #   - public files are read from a separate public domain (storage-public, localhost:8334),
+  #     the way R2 serves a bucket through r2.dev or a custom domain.
+  # Buckets: laqui-public and laqui-private (signed URLs only). Create them with `npm run storage:init`.
   storage:
     image: chrislusf/seaweedfs:4.51
     container_name: laqui-storage
     restart: unless-stopped
     environment:
-      # Local dev credentials only. "anonymous" can read the public bucket.
+      # Local dev credentials only (an R2 API token in production).
       S3_CONFIG: >-
         {"identities":[
-        {"name":"laqui-app","credentials":[{"accessKey":"${STORAGE_ACCESS_KEY:-laqui}","secretKey":"${STORAGE_SECRET_KEY:-laqui_dev_secret}"}],"actions":["Admin","Read","Write","List","Tagging"]},
-        {"name":"anonymous","actions":["Read:laqui-public"]}]}
+        {"name":"laqui-app","credentials":[{"accessKey":"${STORAGE_ACCESS_KEY:-laqui}","secretKey":"${STORAGE_SECRET_KEY:-laqui_dev_secret}"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
@@ -45,6 +47,34 @@ services:
       - "8333:8333"
     volumes:
       - storage-data:/data
+
+  # The public bucket's domain (R2: r2.dev / custom domain). Read-only, files only:
+  # no folder listings and nothing from laqui-private. Reads SeaweedFS's internal filer.
+  storage-public:
+    image: nginx:1.27-alpine
+    container_name: laqui-storage-public
+    restart: unless-stopped
+    depends_on:
+      - storage
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf '%s' "$$NGINX_CONF" > /etc/nginx/conf.d/default.conf &&
+        exec nginx -g 'daemon off;'
+    environment:
+      NGINX_CONF: >-
+        server {
+          listen 80;
+          location ~ /$$ { return 404; }
+          location / {
+            limit_except GET { deny all; }
+            set $$args '';
+            proxy_pass http://storage:8888/buckets/laqui-public/;
+            proxy_hide_header Server;
+          }
+        }
+    ports:
+      - "8334:80"
 
 volumes:
   mysql-data:

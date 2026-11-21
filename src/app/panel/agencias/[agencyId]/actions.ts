@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
+import { onStaffChanged } from "@/lib/drive/sharing";
 
 export type OwnerEmailState = { ok: boolean; message: string } | null;
 
@@ -40,6 +41,7 @@ export async function assignOwnerEmail(agencyId: string, _prev: OwnerEmailState,
     where: { id: owner.id },
     data: { email, userId: user?.id ?? null },
   });
+  await onStaffChanged(agencyId); // the owner's new email gets the Drive folder, the old one loses it
   revalidatePath(`/panel/agencias/${agencyId}`);
   revalidatePath("/panel");
 

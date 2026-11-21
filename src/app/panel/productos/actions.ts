@@ -118,8 +118,8 @@ export async function setGameImage(
         throw new CatalogValidationError(err.message);
       throw err;
     }
-    const key = keys.gameImage(game.code, Date.now());
-    await putFile("public", key, body, "image/webp");
+    const key = keys.gameImage(game.code);
+    await putFile("public", key, body, "image/webp", { immutable: true });
     await prisma.gameDefinition.update({
       where: { id: gameId },
       data: { imageKey: key },

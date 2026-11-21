@@ -1,0 +1,8 @@
+phase: apply
+change: agency-google-drive
+artifacts:
+  proposal: true
+  specs: true
+  design: true
+  tasks: true
+  verify: false

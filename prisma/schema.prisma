@@ -98,13 +98,29 @@ model GameModality {
 // Province: availability, lotteries, Quiniela calendar
 // ─────────────────────────────────────────────────────────────
 
+// Country of provinces, lotteries and content ideas (ISO 3166-1 alpha-2 code).
+model Country {
+  id        String        @id @default(cuid())
+  code      String        @unique @db.VarChar(2) // "AR", "UY"
+  name      String
+  provinces Province[]
+  lotteries Lottery[]
+  ideas     ContentIdea[]
+}
+
+// A province, state or jurisdiction of a country (CABA included).
 model Province {
   id             String  @id @default(cuid())
+  countryId      String
+  country        Country @relation(fields: [countryId], references: [id])
   code           String  @unique // e.g. "SF", "BA"
   name           String
   // Bank where the provincial lottery debits/credits agencies (e.g. Banco Provincia for B).
   // New agencies get their single bank account with this bank.
   settlementBank String?
+
+  contentIdeas ContentIdea[]
+  ownLottery   Lottery?      @relation("ProvinceLottery")
 
   games               ProvinceGameAvailability[]
   lotteries           ProvinceLotteryAvailability[]
@@ -158,11 +174,24 @@ model ProvinceGamePrice {
 }
 
 // A Quiniela lottery the user can pick (Nacional, Provincia, Santa Fe, ...).
+// A state lottery: the organism of a province (or CABA) and its Quiniela "lottery" (Ciudad, Provincia, …).
+// Its logo and colors brand the agencies' social pictures (spec social-content "Lottery Brand").
 model Lottery {
-  id     String  @id @default(cuid())
-  code   String  @unique
-  name   String
-  active Boolean @default(true)
+  id                  String    @id @default(cuid())
+  code                String    @unique
+  name                String // short name as Quiniela shows it: "Provincia", "Ciudad", "Santa Fe"
+  fullName            String? // organism: "Instituto Provincial de Lotería y Casinos"
+  countryId           String
+  country             Country   @relation(fields: [countryId], references: [id])
+  provinceId          String?   @unique // jurisdiction; null = a national lottery (Uruguay)
+  province            Province? @relation("ProvinceLottery", fields: [provinceId], references: [id], onDelete: SetNull)
+  website             String?   @db.VarChar(300)
+  logoKey             String?   @db.VarChar(500) // public storage key, PNG
+  brandPrimaryColor   String?   @db.VarChar(9)
+  brandSecondaryColor String?   @db.VarChar(9)
+  // Its Quiniela draws are offered in Laqui (program, results, orders). Other lotteries are listed for their brand.
+  quinielaDraws       Boolean   @default(false)
+  active              Boolean   @default(true)
 
   provinces      ProvinceLotteryAvailability[]
   orderSlices    OrderQuinielaLottery[]
@@ -394,6 +423,8 @@ model Agency {
   primaryColor String?
 
   assets             AgencyAsset[]
+  socialAccounts     AgencySocialAccount[]
+  driveConnection    AgencyDriveConnection?
   ownerProducts      OwnerProductAgency[]
   funds              AgencyFund[]
   cashSessions       CashSession[]
@@ -428,7 +459,7 @@ enum AgencyAssetKind {
 }
 
 // Branding files of an agency, stored in the public bucket under
-// agencias/{provincia}/{legajo}/logo/. One current file per kind.
+// agencias/{provincia}/{legajo}/marca/{variante}-{v}.{ext}. One current file per kind.
 model AgencyAsset {
   id         String          @id @default(cuid())
   agencyId   String
@@ -489,7 +520,7 @@ model AgencyEmployee {
   publicName         String? // nombre para redes, e.g. "Marisa"
   socialMediaConsent Boolean   @default(false) // permiso firmado para salir en redes
   consentAt          DateTime? @db.Date
-  photoKey           String?   @db.VarChar(500) // public bucket: agencias/{prov}/{legajo}/empleados/{id}/foto.{ext}
+  photoKey           String?   @db.VarChar(500) // public bucket: agencias/{prov}/{legajo}/equipo/{id}/foto-{v}.{ext}
 
   // Home address ("domicilio")
   street            String?
@@ -500,9 +531,10 @@ model AgencyEmployee {
   addressProvinceId String?
   addressProvince   Province? @relation(fields: [addressProvinceId], references: [id])
 
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
   uploadedTickets BetTicket[]
+  driveShares     AgencyDriveShare[]
 
   @@unique([agencyId, cuil])
   @@unique([agencyId, userId]) // one membership per user per agency
@@ -533,11 +565,12 @@ model User {
   scheduleTemplates ScheduleTemplate[]
   ownerProducts     OwnerProduct[]
   fundMovements     FundMovement[]
-  cashOpened        CashSession[]       @relation("CashSessionOpenedBy")
-  settlementsLoaded LotterySettlement[] @relation("SettlementCreatedBy")
-  cashClosed        CashSession[]       @relation("CashSessionClosedBy")
-  creditEntries     CreditEntry[]       @relation("CreditEntryCreatedBy")
-  jobRuns           JobRun[]            @relation("JobRunTriggeredBy")
+  cashOpened        CashSession[]           @relation("CashSessionOpenedBy")
+  settlementsLoaded LotterySettlement[]     @relation("SettlementCreatedBy")
+  cashClosed        CashSession[]           @relation("CashSessionClosedBy")
+  creditEntries     CreditEntry[]           @relation("CreditEntryCreatedBy")
+  jobRuns           JobRun[]                @relation("JobRunTriggeredBy")
+  driveConnections  AgencyDriveConnection[] @relation("DriveConnectedBy")
   sessions          Session[]
   accounts          Account[]
 
@@ -892,7 +925,7 @@ enum ReceiptStatus {
 }
 
 // Payment proof sent by the customer. Private bucket:
-// agencias/{provincia}/{legajo}/comprobantes/{yyyy}/{mm}/{orderId}/{id}.{ext}
+// agencias/{provincia}/{legajo}/pedidos/{yyyy}/{mm}/{orderId}/comprobante-{id}.{ext}
 model Receipt {
   id         String        @id @default(cuid())
   orderId    String
@@ -911,7 +944,7 @@ model Receipt {
 
 // TENTATIVE: photo of the printed lottery ticket ("boleta") that the agency sends
 // to the customer as proof of play. Private bucket:
-// agencias/{provincia}/{legajo}/boletas/{yyyy}/{mm}/{orderId}/{id}.{ext}
+// agencias/{provincia}/{legajo}/pedidos/{yyyy}/{mm}/{orderId}/boleta-{id}.{ext}
 model BetTicket {
   id           String          @id @default(cuid())
   orderId      String
@@ -940,7 +973,7 @@ model OwnerProduct {
   owner          User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   name           String
   description    String?   @db.Text
-  imageKey       String?   @db.VarChar(500) // public bucket
+  imageKey       String?   @db.VarChar(500) // public bucket: duenos/{ownerUserId}/productos/{id}/imagen-{v}.webp
   active         Boolean   @default(true)
   saleMode       SaleMode  @default(PHYSICAL) // physical items get their own cash register line
   // Optional sale window, e.g. a raffle until its draw date (inclusive)
@@ -1066,7 +1099,7 @@ model FundMovement {
   source        MovementSource    @default(MANUAL)
   // Both legs of a transfer share the same transferId.
   transferId    String?           @db.VarChar(30)
-  // Private bucket: agencias/{prov}/{legajo}/finanzas/{yyyy}/{mm}/{id}.{ext} (future uploads)
+  // Private bucket: agencias/{prov}/{legajo}/finanzas/movimientos/{yyyy}/{mm}/{id}.{ext} (future uploads)
   attachmentKey String?           @db.VarChar(500)
 
   // Set for movements recorded in a cash session (customer payments, prizes, expenses, close adjustment)
@@ -1200,7 +1233,7 @@ model LotterySettlement {
   amount        Decimal             @db.Decimal(14, 2)
   direction     SettlementDirection
   accountNumber String?             @db.VarChar(30) // as printed, e.g. "C.A. 12345/0"
-  // Private bucket: agencias/{prov}/{legajo}/liquidaciones/{yyyy}/{mm}/{id}.{ext}
+  // Private bucket: agencias/{prov}/{legajo}/finanzas/liquidaciones/{yyyy}/{mm}/{fecha}-{id}.{ext}
   ticketKey     String?             @db.VarChar(500)
   ticketMime    String?
   notes         String?             @db.Text
@@ -1282,4 +1315,166 @@ model QuinielaResultNumber {
   number   String         @db.VarChar(6)
 
   @@id([resultId, position])
+}
+
+// ─── Social content (spec social-content) ─────────────────────
+
+enum SocialNetwork {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+}
+
+// One account per network: the handle and the email registered on it. Never passwords.
+model AgencySocialAccount {
+  id       String        @id @default(cuid())
+  agencyId String
+  agency   Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  network  SocialNetwork
+  handle   String        @db.VarChar(60) // without "@"
+  email    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agencyId, network])
+}
+
+enum ContentIdeaKind {
+  PATRIOTIC_DATE // fecha patria
+  BIRTH // natalicio / cumpleaños
+  DEATH // paso a la inmortalidad / aniversario de muerte
+  COMMEMORATION // "Día de…"
+  EVENT
+}
+
+enum ContentTopic {
+  PATRIA
+  PROCERES
+  FUTBOL
+  DEPORTES
+  FARANDULA
+  MUSICA
+  STREAMING
+  CULTURA
+}
+
+enum ContentIdeaSource {
+  SEED
+  MANUAL
+  WIKIDATA
+}
+
+// An idea that repeats every year on day/month. Numbers are derived per year (src/lib/content/numbers.ts).
+model ContentIdea {
+  id         String            @id @default(cuid())
+  kind       ContentIdeaKind
+  topic      ContentTopic
+  title      String // "Vuelta de Obligado", "José de San Martín"
+  month      Int // 1..12
+  day        Int // 1..31
+  year       Int? // origin year: years elapsed = viewed year - year
+  countryId  String
+  country    Country           @relation(fields: [countryId], references: [id])
+  provinceId String? // null = the whole country
+  province   Province?         @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  // Short context for captions and the AI prompt ("Combate en el Paraná contra la flota anglo-francesa").
+  summary    String?           @db.Text
+  // Templates with {years} {year} {agency}; empty = a default per kind.
+  headline   String?           @db.VarChar(200)
+  caption    String?           @db.Text
+  popularity Int               @default(0) // higher first
+  active     Boolean           @default(true)
+  source     ContentIdeaSource @default(MANUAL)
+  sourceKey  String?           @db.VarChar(100) // stable key for seeds/imports
+
+  numbers ContentIdeaNumber[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([source, sourceKey])
+  @@index([month, day])
+}
+
+// Fixed numbers of an idea besides the derived ones (a jersey number, a famous score).
+model ContentIdeaNumber {
+  id     String      @id @default(cuid())
+  ideaId String
+  idea   ContentIdea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  value  Int
+  reason String      @db.VarChar(80) // "camiseta"
+
+  @@index([ideaId])
+}
+
+// Traditional meaning of the Quiniela numbers ("los sueños"). usable = false: never on posts.
+model QuinielaNumberMeaning {
+  number  Int     @id // 0..99
+  meaning String
+  usable  Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// Agency Google Drive (spec agency-google-drive)
+// ─────────────────────────────────────────────────────────────
+
+enum DriveConnectionStatus {
+  ACTIVE
+  NEEDS_RECONNECT // Google rejected the refresh token (expired, revoked, scope removed)
+  DISCONNECTED // token deleted by the agency; folder ids kept for a reconnection
+}
+
+// The agency's own Google account (often its social media account, not the sign-in), scope
+// drive.file: Laqui only sees what it creates. Folder Laqui/{Agencia} is shared with the staff.
+model AgencyDriveConnection {
+  id              String                @id @default(cuid())
+  agencyId        String                @unique
+  agency          Agency                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  googleEmail     String
+  googleAccountId String                @db.VarChar(100) // Drive about.user.permissionId (stable)
+  refreshTokenEnc String?               @db.Text // AES-256-GCM "v1.iv.tag.ct", AAD = agencyId; null when disconnected
+  rootFolderId    String                @db.VarChar(100) // "Laqui", shared by agencies on the same account
+  folderId        String                @db.VarChar(100) // "Laqui/{Agencia}"
+  status          DriveConnectionStatus @default(ACTIVE)
+  lastError       String?               @db.VarChar(500)
+  connectedById   String?
+  connectedBy     User?                 @relation("DriveConnectedBy", fields: [connectedById], references: [id], onDelete: SetNull)
+  connectedAt     DateTime
+  lastSyncedAt    DateTime?
+
+  shares AgencyDriveShare[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([googleAccountId])
+}
+
+enum DriveShareState {
+  SHARED // permission created by Laqui: removed when the employee leaves
+  MANUAL // the email already had access when Laqui tried: never removed
+  FAILED // Google refused the share (e.g. not a Google account); retried on the next sync
+}
+
+// One row per email Laqui handled on the agency folder.
+model AgencyDriveShare {
+  id           String                @id @default(cuid())
+  connectionId String
+  connection   AgencyDriveConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  employeeId   String?
+  employee     AgencyEmployee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  email        String
+  state        DriveShareState
+  permissionId String?               @db.VarChar(100) // only for SHARED
+  role         String                @db.VarChar(20)
+  error        String?               @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([connectionId, email])
+  @@index([employeeId])
 }

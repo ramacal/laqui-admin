@@ -34,8 +34,10 @@ export default async function PanelLayout({
       title: "Plataforma",
       links: [
         { href: "/panel/juegos", label: "Juegos y precios" },
+        { href: "/panel/loterias", label: "Loterías" },
         { href: "/panel/quiniela", label: "Sorteos de Quiniela" },
         { href: "/panel/tareas", label: "Tareas programadas" },
+        { href: "/panel/redes", label: "Ideas para redes" },
       ],
     });
 
