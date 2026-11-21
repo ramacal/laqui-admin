@@ -186,6 +186,34 @@ export function AddableList({
 }
 
 /**
+ * One value edited right where it is shown (a line of the Caja diaria sheet): the row gets a
+ * pencil at the end (a 2.25rem slot, so rows without one can keep the same space); editing swaps
+ * the row for the form (ending with <FormActions>), framed like a panel being edited.
+ */
+export function InlineEdit({ view, label, children }: { view: ReactNode; label: string; children: ReactNode }) {
+  const { editing, flash, open, ctx } = useEditing();
+  if (editing)
+    return (
+      <div className="my-1 rounded-lg border border-solid border-primary p-3 ring-4 ring-accent">
+        <Ctx.Provider value={ctx}>{children}</Ctx.Provider>
+      </div>
+    );
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">{view}</div>
+        <span className="flex w-9 shrink-0 justify-end">
+          <Button variant="quiet" size="icon" onClick={() => open()} aria-label={label} title={label}>
+            <Pencil />
+          </Button>
+        </span>
+      </div>
+      <Flash message={flash} />
+    </>
+  );
+}
+
+/**
  * Footer of every panel form: result message, then Cancelar (inside an EditableSection) and the
  * submit button, right-aligned and sized to their text. A successful save closes the section.
  */

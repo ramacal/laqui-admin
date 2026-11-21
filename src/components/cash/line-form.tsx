@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import type { FormState } from "@/app/panel/caja/actions";
+import { FormActions } from "@/components/ui/editable-section";
 
 const LINES = [
   { value: "CASH_IN", label: "Ingreso de efectivo" },
@@ -38,11 +39,11 @@ export function LineForm({
         </label>
         <label className="field">
           <span className="small muted">Monto ($)</span>
-          <input name="amount" className="input" inputMode="decimal" placeholder="1.500" required />
+          <input name="amount" className="input" inputMode="decimal" placeholder="1.500" required autoFocus />
         </label>
       </div>
       {line === "TRANSFER" && accounts.length === 0 && (
-        <p className="small warn">
+        <p className="text-sm text-warning">
           No hay cuentas para recibir transferencias. Agregá una en Configuración › Medios de cobro (la cuenta del legajo
           es solo para Lotería).
         </p>
@@ -63,14 +64,7 @@ export function LineForm({
         <span className="small muted">Detalle (opcional)</span>
         <input name="description" className="input" maxLength={120} placeholder={line === "EXPENSE" ? "Artículos de limpieza" : ""} />
       </label>
-      <button type="submit" className="btn btn-primary" disabled={pending}>
-        {pending ? "Guardando…" : "Cargar"}
-      </button>
-      {state && (
-        <p className={`small ${state.ok ? "ok-text" : "error"}`} role="status">
-          {state.message}
-        </p>
-      )}
+      <FormActions state={state} pending={pending} submitLabel="Cargar" />
     </form>
   );
 }

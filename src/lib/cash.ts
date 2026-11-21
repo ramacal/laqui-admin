@@ -405,4 +405,18 @@ export function agencySessions(agencyId: string, fromDate: string) {
   });
 }
 
+/** Closing difference of each closed session (negative = faltante), from its close adjustment. */
+export async function closingDifferences(sessionIds: string[]) {
+  const rows = await prisma.fundMovement.findMany({
+    where: { cashSessionId: { in: sessionIds }, kind: "ADJUSTMENT", reference: REF.close, voidedAt: null },
+    select: { cashSessionId: true, direction: true, amount: true },
+  });
+  const out = new Map<string, Prisma.Decimal>();
+  for (const r of rows) {
+    const signed = r.direction === "OUT" ? r.amount.neg() : r.amount;
+    out.set(r.cashSessionId!, (out.get(r.cashSessionId!) ?? ZERO).add(signed));
+  }
+  return out;
+}
+
 export const sortByShift = <T extends { shift: CashShift }>(rows: T[]) => [...rows].sort((a, b) => SHIFT_ORDER[a.shift] - SHIFT_ORDER[b.shift]);
