@@ -83,6 +83,10 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
   if (!agency.titularFirstName && !agency.titularLastName) alerts.push({ text: "Falta el titular del legajo", href: `${base}/datos` });
 
   const forSale = catalog.games.length + catalog.products.length;
+  // The legajo's account is where Lotería settles, not a way to get paid: it goes with Lotería.
+  const legajo = finances?.funds.find((f) => f.fund.settlesAgencyId) ?? null;
+  const paymentFunds = finances?.funds.filter((f) => f.fund.active && !f.fund.settlesAgencyId) ?? [];
+  const paymentTotal = finances ? paymentFunds.reduce((sum, f) => sum.add(f.balance), finances.total.mul(0)) : null;
   const owing = credit.rows.filter((r) => r.balance.isPositive() && !r.balance.isZero()).length;
   const dateLine = new Date().toLocaleDateString("es-AR", { timeZone: agency.timezone, weekday: "long", day: "numeric", month: "long" });
 
@@ -119,7 +123,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
     kpis.push({
       label: "Saldo total",
       value: money(finances.total.toString()),
-      detail: `${finances.funds.filter((f) => f.fund.active).length} medios de cobro`,
+      detail: "medios de cobro y cuenta del legajo",
       href: `${base}/finanzas`,
       tone: finances.total.isNegative() ? "warn" : undefined,
     });
@@ -240,6 +244,15 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
         {settlements && (
           <DashCard title="Liquidaciones de Lotería" link={{ href: `${base}/liquidaciones`, label: "Ver tickets" }}>
             <RowList>
+              {legajo && (
+                <Row
+                  title={legajo.fund.name}
+                  detail="Cuenta del legajo: donde Lotería debita y acredita"
+                  trailing={
+                    <strong className={legajo.balance.isNegative() ? "text-destructive" : ""}>{money(legajo.balance.toString())}</strong>
+                  }
+                />
+              )}
               {settlements.upcoming.map((u) => (
                 <Row
                   key={u.id}
@@ -274,17 +287,14 @@ export default async function AgencyPage({ params }: { params: Promise<{ agencyI
         {finances && (
           <DashCard title="Plata por medio de cobro" link={{ href: `${base}/finanzas`, label: "Ver movimientos" }}>
             <RowList>
-              {finances.funds
-                .filter((f) => f.fund.active)
-                .map((f) => (
-                  <Row
-                    key={f.fund.id}
-                    title={f.fund.name}
-                    detail={f.fund.settlesAgencyId ? "Cuenta del legajo" : undefined}
-                    trailing={<strong className={f.balance.isNegative() ? "text-destructive" : ""}>{money(f.balance.toString())}</strong>}
-                  />
-                ))}
-              <Row title="Total" trailing={<strong>{money(finances.total.toString())}</strong>} />
+              {paymentFunds.map((f) => (
+                <Row
+                  key={f.fund.id}
+                  title={f.fund.name}
+                  trailing={<strong className={f.balance.isNegative() ? "text-destructive" : ""}>{money(f.balance.toString())}</strong>}
+                />
+              ))}
+              <Row title="Total" trailing={<strong>{money((paymentTotal ?? finances.total).toString())}</strong>} />
             </RowList>
           </DashCard>
         )}
