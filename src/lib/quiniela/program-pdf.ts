@@ -39,8 +39,13 @@ async function pageItems(pdf: Uint8Array): Promise<Item[]> {
   // Text extraction only; fonts are not needed but pdf.js warns without them (expects a "/" ending).
   const standardFontDataUrl = path.join(process.cwd(), "node_modules", "pdfjs-dist", "standard_fonts").split(path.sep).join("/") + "/";
   // A copy: pdf.js takes ownership of (detaches) the buffer it reads.
-  const doc = await getDocument({ data: pdf.slice(), standardFontDataUrl }).promise;
-  if (doc.numPages !== 1) throw new Error(`Se esperaba un programa de 1 página y tiene ${doc.numPages}.`);
+  // pdf.js 6 removed PDFDocumentProxy.destroy(): the loading task owns the document and the worker.
+  const task = getDocument({ data: pdf.slice(), standardFontDataUrl });
+  const doc = await task.promise;
+  if (doc.numPages !== 1) {
+    await task.destroy();
+    throw new Error(`Se esperaba un programa de 1 página y tiene ${doc.numPages}.`);
+  }
   const page = await doc.getPage(1);
   const { height } = page.getViewport({ scale: 1 });
   const content = await page.getTextContent();
@@ -49,7 +54,7 @@ async function pageItems(pdf: Uint8Array): Promise<Item[]> {
     if (!("str" in it) || !it.str.trim()) continue;
     items.push({ s: it.str.trim(), x: it.transform[4], y: height - it.transform[5], w: it.width });
   }
-  await doc.destroy();
+  await task.destroy();
   return items;
 }
 

@@ -36,11 +36,11 @@
     "cron-parser": "5.4.0",
     "libphonenumber-js": "1.12.10",
     "lucide-react": "1.70.0",
-    "next": "16.2.1",
-    "pdfjs-dist": "5.7.284",
+    "next": "16.4.5",
+    "pdfjs-dist": "6.2.108",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "sharp": "0.34.5",
+    "sharp": "0.35.5",
     "tailwind-merge": "3.7.0",
     "tailwindcss": "4.3.5"
   },
@@ -50,9 +50,12 @@
     "@types/react-dom": "^19.0.0",
     "dotenv": "18.0.10",
     "eslint": "^9.0.0",
-    "eslint-config-next": "16.2.1",
+    "eslint-config-next": "16.4.5",
     "prisma": "7.10.1",
     "tsx": "4.23.15",
     "typescript": "^5.0.0"
+  },
+  "overrides": {
+    "effect": "3.22.1"
   }
 }
