@@ -399,20 +399,29 @@ model JobRun {
 // ─────────────────────────────────────────────────────────────
 
 model Agency {
-  id              String   @id @default(cuid())
-  slug            String   @unique // public URL segment
-  name            String
-  provinceId      String
-  province        Province @relation(fields: [provinceId], references: [id])
+  id               String       @id @default(cuid())
+  slug             String       @unique // public URL segment
+  name             String
+  provinceId       String
+  province         Province     @relation(fields: [provinceId], references: [id])
   // Official file number ("número de legajo") assigned by the provincial lottery.
-  licenseNumber   String   @db.VarChar(20)
-  // The license holder ("titular") is the agency's OWNER in AgencyEmployee.
-  // WhatsApp destination, E.164 without "+", e.g. 5491178490421.
+  licenseNumber    String       @db.VarChar(20)
+  // Owner of the agency: a group of agencies (spec agency-groups). Nullable only until the
+  // agency-groups migration runs; required afterwards.
+  groupId          String?
+  group            AgencyGroup? @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  // License holder ("titular"): legal data, grants no access by itself.
+  titularFirstName String?
+  titularLastName  String?
+  titularCuil      String?      @db.VarChar(11) // 11 digits, no dashes
+  titularEmail     String? // lowercase Google email; only used to offer access
+  // Legacy: the titular was also the agency's OWNER row in AgencyEmployee (removed in phase 4).
+  // WhatsApp destination, E.164 without "+", e.g. 5491100000000.
   // Null while onboarding: the agency cannot receive orders until it is set.
-  cellphoneNumber String?
-  email           String?
-  active          Boolean  @default(true)
-  timezone        String   @default("America/Argentina/Buenos_Aires")
+  cellphoneNumber  String?
+  email            String?
+  active           Boolean      @default(true)
+  timezone         String       @default("America/Argentina/Buenos_Aires")
 
   // Storefront address (province = provinceId)
   street       String?
@@ -449,6 +458,62 @@ model Agency {
 
   @@unique([provinceId, licenseNumber])
   @@index([provinceId])
+  @@index([groupId])
+}
+
+// ─── Groups of agencies (spec: agency-groups) ─────────────────
+// A group owns agencies, the general schedule and the owner products. Its owners are equal:
+// each sees and manages every agency of the group. Per-agency staff stays in AgencyEmployee.
+model AgencyGroup {
+  id   String @id @default(cuid())
+  slug String @unique // lowercase slug via src/lib/names.ts; used in storage keys
+  name String // "Agencias Pérez"
+
+  agencies Agency[]
+  owners   AgencyGroupOwner[]
+  events   AgencyGroupEvent[]
+  schedule ScheduleTemplate?
+  products OwnerProduct[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// An owner of a group. Added by Google email; userId is set when that email signs in.
+model AgencyGroupOwner {
+  id      String      @id @default(cuid())
+  groupId String
+  group   AgencyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  email   String // lowercase
+  userId  String?
+  user    User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([groupId, email])
+  @@index([userId])
+}
+
+enum AgencyGroupEventKind {
+  OWNER_ADDED
+  OWNER_REMOVED
+  AGENCY_MOVED_IN
+  AGENCY_MOVED_OUT
+}
+
+// Append-only log of what changes who controls a group.
+model AgencyGroupEvent {
+  id      String               @id @default(cuid())
+  groupId String
+  group   AgencyGroup          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  kind    AgencyGroupEventKind
+  actorId String?
+  actor   User?                @relation("AgencyGroupEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  detail  String // human-readable, e.g. "agregó a x@gmail.com"
+
+  createdAt DateTime @default(now())
+
+  @@index([groupId, createdAt])
 }
 
 enum AgencyAssetKind {
@@ -562,6 +627,8 @@ model User {
   active        Boolean      @default(true)
 
   memberships       AgencyEmployee[]
+  groupOwnerships   AgencyGroupOwner[]
+  groupEvents       AgencyGroupEvent[]      @relation("AgencyGroupEventActor")
   scheduleTemplates ScheduleTemplate[]
   ownerProducts     OwnerProduct[]
   fundMovements     FundMovement[]
@@ -664,10 +731,13 @@ model AgencyScheduleRule {
 // The owner's "Horario general": inherited by their agencies (Agency.scheduleTemplateId).
 // One per owner. Agencies that edit their hours become personalized (own AgencyScheduleRule).
 model ScheduleTemplate {
-  id          String @id @default(cuid())
-  name        String @default("Horario general")
-  ownerUserId String
-  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  id          String       @id @default(cuid())
+  name        String       @default("Horario general")
+  ownerUserId String?
+  owner       User?        @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  // agency-groups: the general schedule belongs to the group (ownerUserId goes in phase 4)
+  groupId     String?      @unique
+  group       AgencyGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   rules      ScheduleTemplateRule[]
   exceptions ScheduleException[]
@@ -968,18 +1038,21 @@ model BetTicket {
 // ─────────────────────────────────────────────────────────────
 
 model OwnerProduct {
-  id             String    @id @default(cuid())
-  ownerUserId    String
-  owner          User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  ownerUserId    String?
+  owner          User?        @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  // agency-groups: products belong to the group (ownerUserId goes in phase 4)
+  groupId        String?
+  group          AgencyGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
   name           String
-  description    String?   @db.Text
-  imageKey       String?   @db.VarChar(500) // public bucket: duenos/{ownerUserId}/productos/{id}/imagen-{v}.webp
-  active         Boolean   @default(true)
-  saleMode       SaleMode  @default(PHYSICAL) // physical items get their own cash register line
+  description    String?      @db.Text
+  imageKey       String?      @db.VarChar(500) // public bucket: duenos/{ownerUserId}/productos/{id}/imagen-{v}.webp
+  active         Boolean      @default(true)
+  saleMode       SaleMode     @default(PHYSICAL) // physical items get their own cash register line
   // Optional sale window, e.g. a raffle until its draw date (inclusive)
-  availableFrom  DateTime? @db.Date
-  availableUntil DateTime? @db.Date
-  sortOrder      Int       @default(0)
+  availableFrom  DateTime?    @db.Date
+  availableUntil DateTime?    @db.Date
+  sortOrder      Int          @default(0)
 
   prices     OwnerProductPrice[]
   agencies   OwnerProductAgency[]
@@ -990,6 +1063,7 @@ model OwnerProduct {
   updatedAt DateTime @updatedAt
 
   @@index([ownerUserId])
+  @@index([groupId])
 }
 
 // Unit price history. In effect: the latest validFrom <= today.

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAccess } from "@/lib/access";
+import { ownsGroup, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { agenciesOwnedBy, todayIn } from "@/lib/schedule";
+import { agenciesOfGroup, todayIn } from "@/lib/schedule";
 import { SimpleForm } from "@/components/schedule/simple-form";
 import { PriceForm, PriceHistory } from "@/components/products/price-parts";
 import {
@@ -24,10 +24,10 @@ export default async function OwnerProductPage({ params }: { params: Promise<{ p
     where: { id: productId },
     include: { prices: true, agencies: { select: { agencyId: true } } },
   });
-  if (!product || (!access.isPlatformAdmin && product.ownerUserId !== access.user.id)) notFound();
+  if (!product || !ownsGroup(access, product.groupId)) notFound();
 
   const today = todayIn(TZ);
-  const agencies = await agenciesOwnedBy(product.ownerUserId);
+  const agencies = await agenciesOfGroup(product.groupId!);
   const offered = new Set(product.agencies.map((a) => a.agencyId));
   const rows = product.prices.map((p) => ({
     id: p.id,

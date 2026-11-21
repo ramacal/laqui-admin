@@ -6,6 +6,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/prisma";
+import { uniqueGroupSlug } from "../src/lib/groups";
 import { ensureGeneral, getWeek, linkUnscheduledAgencies, replaceWeek, type Week } from "../src/lib/schedule";
 import { syncDriveAccess } from "../src/lib/drive/sharing";
 
@@ -75,6 +76,20 @@ async function main() {
   const ownerEmail = data.ownerEmail.toLowerCase();
   const owner = await prisma.user.findUnique({ where: { email: ownerEmail } });
 
+  // The agencies belong to the group owned by ownerEmail (spec agency-groups); created if missing.
+  const existingOwner = await prisma.agencyGroupOwner.findFirst({ where: { email: ownerEmail }, select: { groupId: true } });
+  const groupName = owner?.name ?? `${data.ownerFirstName} ${data.ownerLastName}`;
+  const group = existingOwner
+    ? await prisma.agencyGroup.findUniqueOrThrow({ where: { id: existingOwner.groupId } })
+    : await prisma.agencyGroup.create({
+        data: {
+          slug: await uniqueGroupSlug(groupName),
+          name: groupName,
+          owners: { create: { email: ownerEmail, userId: owner?.id ?? null } },
+          events: { create: { kind: "OWNER_ADDED", detail: `importación: ${ownerEmail} queda como dueño` } },
+        },
+      });
+
   for (const a of data.agencies) {
     const fields = {
       name: a.name,
@@ -89,9 +104,10 @@ async function main() {
     };
     const agency = await prisma.agency.upsert({
       where: { slug: a.slug },
-      create: { slug: a.slug, ...fields },
-      update: fields,
+      create: { slug: a.slug, groupId: group.id, ...fields },
+      update: fields, // an existing agency keeps its group (it may have been moved)
     });
+    if (!agency.groupId) await prisma.agency.update({ where: { id: agency.id }, data: { groupId: group.id } });
 
 
     for (const game of games) {
@@ -102,29 +118,15 @@ async function main() {
       });
     }
 
-    // Owner = license holder ("titular", "Apellido, Nombres"). The file's ownerEmail is only a
-    // default for new owners: an email assigned later by the platform admin is never overwritten.
+    // Titular = license holder ("Apellido, Nombres"): agency data, grants no access.
     const holder = a.licenseHolder?.includes(",")
       ? { lastName: a.licenseHolder.split(",")[0].trim(), firstName: a.licenseHolder.split(",").slice(1).join(",").trim() }
       : null;
-    const ownerRow = await prisma.agencyEmployee.findFirst({ where: { agencyId: agency.id, role: "OWNER" } });
-    if (ownerRow) {
-      await prisma.agencyEmployee.update({
-        where: { id: ownerRow.id },
-        data: { active: true, ...(holder ?? {}) },
+    if (holder)
+      await prisma.agency.update({
+        where: { id: agency.id },
+        data: { titularFirstName: holder.firstName, titularLastName: holder.lastName },
       });
-    } else {
-      await prisma.agencyEmployee.create({
-        data: {
-          agencyId: agency.id,
-          role: "OWNER",
-          firstName: holder?.firstName ?? data.ownerFirstName,
-          lastName: holder?.lastName ?? data.ownerLastName,
-          email: ownerEmail,
-          userId: owner?.id ?? null,
-        },
-      });
-    }
 
     for (const e of a.employees) {
       const existing = await prisma.agencyEmployee.findFirst({
@@ -149,10 +151,10 @@ async function main() {
     }
   }
 
-  // Default hours go to the owner's "Horario general" (spec agency-schedule): only when it
+  // Default hours go to the group's "Horario general" (spec agency-schedule): only when it
   // has no weekly hours yet, so changes made in the panel are never overwritten.
-  if (owner && data.defaultWeeklyHours?.length) {
-    const general = await ensureGeneral(owner.id);
+  if (data.defaultWeeklyHours?.length) {
+    const general = await ensureGeneral(group.id);
     const current = await getWeek({ templateId: general.id });
     if (current.every((day) => day.length === 0)) {
       const week: Week = [[], [], [], [], [], [], []];
@@ -160,7 +162,7 @@ async function main() {
         for (const day of block.days) week[day].push({ opensAt: block.opensAt, closesAt: block.closesAt });
       await replaceWeek({ templateId: general.id }, week);
     }
-    await linkUnscheduledAgencies(owner.id, general.id);
+    await linkUnscheduledAgencies(group.id, general.id);
   }
 
   const slugs = data.agencies.map((a) => a.slug);

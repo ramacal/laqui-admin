@@ -15,24 +15,31 @@ export default async function PanelLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isPlatformAdmin, memberships } = await requireAccess();
-  const isOwner = memberships.some((m) => m.role === "OWNER");
+  const { user, isPlatformAdmin, memberships, groups: ownedGroups } = await requireAccess();
+  const isOwner = ownedGroups.length > 0;
 
   const groups: NavGroup[] = [
     { title: null, links: [{ href: "/panel", label: "Inicio" }] },
   ];
+  // The owner's settings shared by all their agencies go below the agency list, under their
+  // own heading, so they don't read as one more agency section.
+  const ownedCount = memberships.filter((m) => m.role === "OWNER").length;
   if (isOwner)
     groups.push({
-      title: "Mis agencias",
+      title: "Configuración general",
+      hint: ownedCount > 1 ? `Vale para tus ${ownedCount} agencias` : "Vale para tu agencia",
+      placement: "bottom",
       links: [
         { href: "/panel/horarios", label: "Horario general" },
-        { href: "/panel/productos", label: "Productos" },
+        { href: "/panel/productos", label: "Productos y precios" },
+        { href: "/panel/grupo", label: "Personas del grupo" },
       ],
     });
   if (isPlatformAdmin)
     groups.push({
       title: "Plataforma",
       links: [
+        { href: "/panel/grupos", label: "Grupos y agencias" },
         { href: "/panel/juegos", label: "Juegos y precios" },
         { href: "/panel/loterias", label: "Loterías" },
         { href: "/panel/quiniela", label: "Sorteos de Quiniela" },

@@ -41,12 +41,11 @@ export const auth = betterAuth({
   plugins: [nextCookies()],
 });
 
-// Attach unlinked employee records with the same email to this user.
+// Attach unlinked employee records and pending group ownerships with the same email to this user.
 async function linkEmployeeRecords(userId: string, email: string) {
-  await prisma.agencyEmployee.updateMany({
-    where: { email: email.toLowerCase(), userId: null },
-    data: { userId },
-  });
+  const where = { email: email.toLowerCase(), userId: null };
+  await prisma.agencyEmployee.updateMany({ where, data: { userId } });
+  await prisma.agencyGroupOwner.updateMany({ where, data: { userId } });
 }
 
 export type Session = typeof auth.$Infer.Session;

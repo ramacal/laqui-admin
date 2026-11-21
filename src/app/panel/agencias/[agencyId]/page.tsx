@@ -1,38 +1,23 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ROLE_LABEL, agencyRole, canManageDrive, canViewStaff, requireAccess } from "@/lib/access";
+import { ROLE_LABEL, agencyRole, canManageDrive, canViewStaff, ownsGroup, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { publicUrl } from "@/lib/storage";
 import { formatRanges, isAgencyOpen } from "@/lib/schedule";
 import { agencyCatalog } from "@/lib/catalog";
 import { agencyBalances } from "@/lib/finance";
 import { money } from "@/components/products/price-parts";
-import { OwnerEmailForm } from "@/components/owner-email-form";
 import { DriveCard } from "@/components/drive/drive-card";
-import { assignOwnerEmail } from "./actions";
+import { TitularForm } from "@/components/groups/titular-form";
+import { SimpleForm } from "@/components/schedule/simple-form";
+import { moveAgencyAction, saveTitularAction } from "@/app/panel/grupo/actions";
 
 export const metadata = { title: "Agencia · Laqui" };
 
 const ROLE_ORDER = { OWNER: 0, ADMIN: 1, EMPLOYEE: 2 } as const;
 
-function seniority(hiredAt: Date | null) {
-  if (!hiredAt) return null;
-  const now = new Date();
-  let years = now.getUTCFullYear() - hiredAt.getUTCFullYear();
-  const beforeAnniversary =
-    now.getUTCMonth() < hiredAt.getUTCMonth() ||
-    (now.getUTCMonth() === hiredAt.getUTCMonth() && now.getUTCDate() < hiredAt.getUTCDate());
-  if (beforeAnniversary) years--;
-  const since = hiredAt.toLocaleDateString("es-AR", { timeZone: "UTC", month: "short", year: "numeric" });
-  if (years < 1) return `Desde ${since}`;
-  return `Desde ${since} · ${years} ${years === 1 ? "año" : "años"}`;
-}
-
 const formatPhone = (e164: string | null) => (e164 ? `+${e164}` : null);
-const formatDate = (d: Date) => d.toLocaleDateString("es-AR", { timeZone: "UTC" });
-
-const SHIFT_LABEL = { MORNING: "Turno mañana", AFTERNOON: "Turno tarde", FULL_DAY: "Jornada completa", ROTATING: "Rotativo" } as const;
 
 export default async function AgencyPage({
   params,
@@ -51,19 +36,20 @@ export default async function AgencyPage({
     where: { id: agencyId },
     include: {
       province: { select: { code: true, name: true } },
+      group: { select: { name: true, owners: { select: { email: true } }, _count: { select: { agencies: true, owners: true } } } },
       assets: { where: { kind: "LOGO_SYMBOL" }, select: { storageKey: true } },
       employees: canViewStaff(role)
-        ? { orderBy: [{ active: "desc" }, { lastName: "asc" }, { firstName: "asc" }] }
+        ? { where: { role: { not: "OWNER" } }, orderBy: [{ active: "desc" }, { lastName: "asc" }, { firstName: "asc" }] }
         : false,
     },
   });
   if (!agency) notFound();
 
-  // The titular is the agency's owner (spec: Owner Is the License Holder).
-  const owner = await prisma.agencyEmployee.findFirst({
-    where: { agencyId, role: "OWNER", active: true },
-    select: { firstName: true, lastName: true, email: true, userId: true },
-  });
+  // Titular = legal data of the license; the agency belongs to a group (spec agency-groups).
+  const titular = [agency.titularFirstName, agency.titularLastName].filter(Boolean).join(" ");
+  // The group is named only when there is more than one agency or owner in it.
+  const showGroup = Boolean(agency.group) && (agency.group!._count.agencies > 1 || agency.group!._count.owners > 1);
+  const isGroupOwner = ownsGroup(access, agency.groupId);
   const [now, catalog, finances] = await Promise.all([
     isAgencyOpen(agencyId),
     agencyCatalog(agencyId),
@@ -76,7 +62,6 @@ export default async function AgencyPage({
   const pendingLicense = /^pend/i.test(agency.licenseNumber);
   const staff = (agency.employees ?? []).sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]);
   const active = staff.filter((e) => e.active);
-  const inactive = staff.filter((e) => !e.active);
   const address = [agency.street, agency.streetNumber].filter(Boolean).join(" ");
 
   return (
@@ -109,14 +94,17 @@ export default async function AgencyPage({
       <section className="card">
         <dl className="facts">
           <div>
-            <dt>Titular (dueño)</dt>
+            <dt>Titular del legajo</dt>
             <dd>
-              {owner ? `${owner.firstName} ${owner.lastName}` : <span className="warn">Sin dueño cargado</span>}
-              {owner && !owner.userId && (
-                <span className="muted"> · todavía no ingresó al panel</span>
-              )}
+              {titular || <span className="warn">Pendiente de cargar</span>}
             </dd>
           </div>
+          {showGroup && (
+            <div>
+              <dt>Grupo</dt>
+              <dd>{agency.group!.name}</dd>
+            </div>
+          )}
           <div>
             <dt>Dirección</dt>
             <dd>
@@ -205,77 +193,74 @@ export default async function AgencyPage({
         </Link>
       )}
 
-      {access.isPlatformAdmin && owner && (
+      {canViewStaff(role) && (
+        <Link href={`/panel/agencias/${agencyId}/personal`} className="card row link-card">
+          <div className="stack-xs">
+            <strong>
+              Personal · {active.length} {active.length === 1 ? "activo" : "activos"}
+            </strong>
+            <span className="small muted">
+              {active.map((e) => e.firstName).join(", ") || "Todavía no hay personal cargado"} · agregar, editar o dar de baja
+            </span>
+          </div>
+          <span className="chevron" aria-hidden="true">
+            ›
+          </span>
+        </Link>
+      )}
+
+      {isGroupOwner && (
         <section className="card stack-sm">
-          <h2>Acceso del dueño</h2>
-          <OwnerEmailForm currentEmail={owner.email} action={assignOwnerEmail.bind(null, agencyId)} />
+          <div className="stack-xs">
+            <h2>Titular del legajo</h2>
+            <p className="muted small">El dato legal ante Lotería. Ser titular no da acceso por sí solo.</p>
+          </div>
+          <details open={!titular}>
+            <summary>{titular ? `Editar titular (${titular})` : "Cargar titular"}</summary>
+            <div className="spaced">
+              <TitularForm
+                action={saveTitularAction.bind(null, agencyId)}
+                ownerEmails={agency.group?.owners.map((o) => o.email) ?? []}
+                values={{
+                  firstName: agency.titularFirstName ?? "",
+                  lastName: agency.titularLastName ?? "",
+                  cuil: agency.titularCuil ?? "",
+                  email: agency.titularEmail ?? "",
+                }}
+              />
+            </div>
+          </details>
         </section>
       )}
 
-      {canViewStaff(role) && (
-        <section className="stack-sm">
-          <div className="row">
-            <h2>Personal</h2>
-            <span className="muted small">
-              {active.length} {active.length === 1 ? "activo" : "activos"}
-            </span>
-          </div>
-
-          {active.length === 0 ? (
-            <p className="card muted">Todavía no hay personal cargado.</p>
-          ) : (
-            <ul className="list">
-              {active.map((e) => (
-                <li key={e.id} className="card stack-sm">
-                  <div className="row">
-                    <div className="stack-xs">
-                      <strong>
-                        {e.firstName} {e.lastName}
-                      </strong>
-                      <span className="muted small">
-                        {[
-                          e.role === "OWNER" ? "Titular del legajo" : e.jobTitle,
-                          e.shift ? SHIFT_LABEL[e.shift] : null,
-                          seniority(e.hiredAt),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "Sin puesto ni fecha de ingreso"}
-                      </span>
-                    </div>
-                    <span className={`badge ${e.role === "EMPLOYEE" ? "neutral" : ""}`}>{ROLE_LABEL[e.role]}</span>
-                  </div>
-                  <div className="tags">
-                    {e.phone && <span className="tag">{formatPhone(e.phone)}</span>}
-                    {e.userId && <span className="tag">Con acceso al panel</span>}
-                    {e.role !== "OWNER" && (
-                      <span className={`tag ${e.socialMediaConsent ? "ok" : ""}`}>
-                        {e.socialMediaConsent
-                          ? `Redes: sí${e.publicName ? ` como "${e.publicName}"` : ""}`
-                          : "Redes: sin permiso firmado"}
-                      </span>
-                    )}
-                  </div>
-                  {e.notes && <p className="note small">{e.notes}</p>}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {inactive.length > 0 && (
-            <details className="card">
-              <summary>Ex empleados ({inactive.length})</summary>
-              <ul className="list plain">
-                {inactive.map((e) => (
-                  <li key={e.id} className="row muted small">
-                    <span>
-                      {e.firstName} {e.lastName}
-                    </span>
-                    <span>{e.leftAt ? `Egreso ${formatDate(e.leftAt)}` : "Sin fecha de egreso"}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
+      {isGroupOwner && (
+        <section className="card stack-sm danger-zone">
+          <details>
+            <summary>Pasar esta agencia a otro grupo</summary>
+            <div className="spaced">
+              <SimpleForm
+                action={moveAgencyAction.bind(null, agencyId)}
+                submitLabel="Pasar la agencia"
+                buttonClassName="btn btn-danger"
+              >
+                <p className="small muted">
+                  Por ejemplo, si la vendés. Se lleva su caja, fiados, finanzas y personal. Va a usar el horario general
+                  del otro grupo (salvo que tenga horario propio) y deja de ofrecer los productos propios de este grupo.
+                  Ustedes dejan de verla.
+                </p>
+                <label className="field">
+                  <span className="small muted">Email de un dueño del otro grupo</span>
+                  <input name="targetEmail" type="email" className="input" required autoComplete="off" />
+                </label>
+                <label className="field">
+                  <span className="small muted">
+                    Para confirmar, escribí el nombre de la agencia: <strong>{agency.name}</strong>
+                  </span>
+                  <input name="confirmName" className="input" required autoComplete="off" />
+                </label>
+              </SimpleForm>
+            </div>
+          </details>
         </section>
       )}
     </main>

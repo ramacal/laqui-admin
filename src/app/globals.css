@@ -506,7 +506,7 @@ h3 {
 .exception-row > :first-child {
   min-width: 0;
 }
-.exception-row > :last-child {
+.exception-row > :last-child:not(:first-child) {
   flex-shrink: 0;
   text-align: right;
 }
@@ -1626,4 +1626,328 @@ nav.tags .tag {
 .lottery-logo.lg {
   width: 160px;
   height: 96px;
+}
+
+/* ─── Panel home: control board for owners with several agencies ───
+   A blue hero with the day's totals, a "Para revisar" list, and one tile per agency that
+   answers "open now? cash? fiados? money?" at a glance. Numbers use tabular figures so the
+   tiles compare column by column. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.board .board-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  border-radius: 16px;
+  color: var(--primary-ink);
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(255, 255, 255, 0.14) 0%, transparent 55%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 14px),
+    var(--primary);
+  box-shadow: var(--shadow-lg);
+}
+.board-hero h1 {
+  color: inherit;
+}
+.board-kicker {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.board-who {
+  font-size: 0.95rem;
+  opacity: 0.8;
+}
+.kpis {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.16);
+}
+.kpis > div {
+  padding: 0.75rem 0.9rem;
+  background: rgba(0, 0, 80, 0.35);
+}
+.kpis dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.kpis dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+.kpi-of {
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+/* Para revisar */
+.attention {
+  border-left: 4px solid #d99a1e;
+}
+.attention-list {
+  margin-top: 0;
+  gap: 2px;
+}
+.attention-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 44px;
+  padding: 0.45rem 0.6rem;
+  margin: 0 -0.6rem;
+  border-radius: var(--radius-sm);
+  line-height: 1.35;
+}
+.attention-item:hover {
+  background: var(--surface-2);
+}
+.attention-item .dot {
+  background: #d99a1e;
+}
+.attention-item.is-danger .dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px var(--danger-soft);
+}
+
+/* Agency tiles */
+.list.tiles {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.9rem;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: tile-in 0.35s ease-out both;
+}
+.tile.is-open {
+  border-top-color: var(--success);
+}
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1rem 1rem 0.6rem;
+}
+.tile-head:hover .tile-name {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tile-name {
+  font-size: 1.1rem;
+}
+.tile-head .agency-logo {
+  width: 44px;
+  height: 44px;
+}
+.tile-now {
+  padding: 0 1rem 0.75rem;
+}
+.pulse-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pulse-line .dot {
+  width: 9px;
+  height: 9px;
+}
+.pulse-line.is-open {
+  color: var(--success);
+}
+.pulse-line.is-open .dot {
+  background: var(--success);
+  animation: pulse 2s ease-out infinite;
+}
+.tile-facts {
+  margin: 0;
+  padding: 0.25rem 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.tile-facts > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 44px;
+  border-bottom: 1px dashed var(--border);
+}
+.tile-facts > div:last-child {
+  border-bottom: none;
+}
+.tile-facts dt {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.tile-facts dd {
+  margin: 0;
+  text-align: right;
+}
+.tile-facts dd a.num:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.tile-facts .error {
+  font-size: inherit;
+}
+a.status-chip:hover {
+  border-color: var(--border-strong);
+}
+.tile-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.tile-actions a {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+.tile-actions a + a {
+  border-left: 1px solid var(--border);
+}
+.tile-actions a:hover {
+  background: var(--primary-soft);
+}
+
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(15, 110, 86, 0.45);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px rgba(15, 110, 86, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .pulse-line.is-open .dot {
+    animation: none;
+  }
+}
+
+@media (min-width: 720px) {
+  .board .board-hero {
+    padding: 1.5rem 1.75rem;
+  }
+  .kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .list.tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .list.tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Sidebar: agency filter, shown once the list gets long */
+.nav-filter {
+  margin: 0 0.6rem 0.35rem;
+  min-height: 36px;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.nav-filter:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  background: var(--surface);
+}
+.nav-empty {
+  padding: 0.3rem 0.6rem;
+}
+/* Owner settings shared by every agency: set apart below the agency list. */
+.nav-group.is-settings {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+.nav-hint {
+  padding: 0 0.6rem 0.35rem;
+  margin-top: -0.2rem;
+  font-size: 0.8rem;
+  color: var(--subtle);
+}
+/* Radio choices with a hint (titular access) */
+.choice-group {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.choice-group legend {
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.choice:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.choice input {
+  margin-top: 0.2rem;
+}
+.danger-zone {
+  border-color: var(--danger-soft);
+}
+.danger-zone summary {
+  color: var(--danger);
+  font-weight: 600;
 }

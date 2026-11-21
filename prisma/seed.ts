@@ -205,14 +205,33 @@ async function seedDemoAgency() {
     });
   }
 
-  // Demo staff, one per agency role, each with a login. Fake people; CUILs are
-  // made-up numbers with a valid check digit. Emails use the reserved .test TLD.
+  // Demo group (spec agency-groups): owned by the demo owner; the agency belongs to it.
+  const group = await prisma.agencyGroup.upsert({
+    where: { slug: "dueno-demo" },
+    create: { slug: "dueno-demo", name: "Dueño Demo" },
+    update: {},
+  });
+  await prisma.agency.update({
+    where: { id: agency.id },
+    data: { groupId: group.id, titularFirstName: "Titular", titularLastName: "Demo", titularCuil: "20123456788" },
+  });
+
+  // Demo people, one per role, each with a login. Fake people; CUILs are made-up numbers with a
+  // valid check digit. Emails use the reserved .test TLD. The owner is a group owner, not staff.
   for (const s of DEMO_STAFF) {
     const user = await prisma.user.upsert({
       where: { email: s.email },
       create: { email: s.email, name: `${s.firstName} ${s.lastName}` },
       update: {},
     });
+    if (s.role === "OWNER") {
+      await prisma.agencyGroupOwner.upsert({
+        where: { groupId_email: { groupId: group.id, email: s.email } },
+        create: { groupId: group.id, email: s.email, userId: user.id },
+        update: { userId: user.id },
+      });
+      continue;
+    }
     await prisma.agencyEmployee.upsert({
       where: { agencyId_cuil: { agencyId: agency.id, cuil: s.cuil } },
       create: {

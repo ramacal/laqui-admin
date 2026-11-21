@@ -6,12 +6,12 @@
 // to the general schedule with one action. Every action re-checks permissions.
 import { revalidatePath } from "next/cache";
 import type { ScheduleExceptionKind } from "@/generated/prisma/enums";
-import { agencyRole, canEditAgencyExceptions, canEditAgencyHours, getAccess, type Access } from "@/lib/access";
+import { agencyRole, canEditAgencyExceptions, canEditAgencyHours, getAccess, ownsGroup, type Access } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import {
   ScheduleValidationError,
-  agencyOwnerUserId,
-  agenciesOwnedBy,
+  agencyGroupId,
+  agenciesOfGroup,
   createScheduleException,
   ensureGeneral,
   exceptionFromHoliday,
@@ -26,7 +26,7 @@ import {
 
 export type FormState = { ok: boolean; message: string } | null;
 
-/** "agency": id = agencyId. "general": id = the owner's userId. */
+/** "agency": id = agencyId. "general": id = the group id (spec agency-groups). */
 export type ScopeKind = "agency" | "general";
 const TZ = "America/Argentina/Buenos_Aires";
 
@@ -36,8 +36,8 @@ async function requireScope(kind: ScopeKind, id: string, need: "hours" | "except
   const access = await getAccess();
   if (!access) throw new Forbidden("Tu sesión expiró. Volvé a ingresar.");
   if (kind === "general") {
-    if (!access.isPlatformAdmin && access.user.id !== id) throw new Forbidden("Solo el dueño modifica su horario general.");
-    if ((await agenciesOwnedBy(id)).length === 0) throw new Forbidden("Ese usuario no es dueño de ninguna agencia.");
+    if (!ownsGroup(access, id)) throw new Forbidden("Solo los dueños del grupo modifican su horario general.");
+    if ((await agenciesOfGroup(id)).length === 0) throw new Forbidden("Ese grupo no tiene agencias.");
     return access;
   }
   const role = agencyRole(access, id);
@@ -64,14 +64,14 @@ async function guarded(fn: () => Promise<string>): Promise<FormState> {
 
 // ─── Weekly hours ──────────────────────────────────────────────
 
-/** Save the owner's general schedule; their agencies without hours start inheriting it. */
-export async function saveGeneralWeek(ownerUserId: string, _prev: FormState, form: FormData) {
+/** Save the group's general schedule; its agencies without hours start inheriting it. */
+export async function saveGeneralWeek(groupId: string, _prev: FormState, form: FormData) {
   return guarded(async () => {
-    await requireScope("general", ownerUserId, "hours");
+    await requireScope("general", groupId, "hours");
     const week = parseWeek(form.get("week"));
-    const general = await ensureGeneral(ownerUserId);
+    const general = await ensureGeneral(groupId);
     await replaceWeek({ templateId: general.id }, week);
-    const linked = await linkUnscheduledAgencies(ownerUserId, general.id);
+    const linked = await linkUnscheduledAgencies(groupId, general.id);
     return linked ? `Horario general guardado. ${linked} agencia(s) empezaron a usarlo.` : "Horario general guardado.";
   });
 }
@@ -93,9 +93,9 @@ export async function saveAgencyWeek(agencyId: string, _prev: FormState, form: F
 export async function resetAgencyToGeneral(agencyId: string, _prev: FormState, _form: FormData) {
   return guarded(async () => {
     await requireScope("agency", agencyId, "hours");
-    const ownerId = await agencyOwnerUserId(agencyId);
-    const general = ownerId ? await prisma.scheduleTemplate.findUnique({ where: { ownerUserId: ownerId } }) : null;
-    if (!general) throw new ScheduleValidationError("El dueño todavía no tiene un horario general cargado.");
+    const groupId = await agencyGroupId(agencyId);
+    const general = groupId ? await prisma.scheduleTemplate.findUnique({ where: { groupId } }) : null;
+    if (!general) throw new ScheduleValidationError("El grupo todavía no tiene un horario general cargado.");
     await prisma.$transaction([
       prisma.agencyScheduleRule.deleteMany({ where: { agencyId } }),
       prisma.agency.update({ where: { id: agencyId }, data: { scheduleTemplateId: general.id, customHours: false } }),
@@ -150,11 +150,11 @@ export async function addException(kind: ScopeKind, id: string, _prev: FormState
 export async function deleteException(exceptionId: string) {
   const e = await prisma.scheduleException.findUnique({
     where: { id: exceptionId },
-    include: { template: { select: { ownerUserId: true } } },
+    include: { template: { select: { groupId: true } } },
   });
   if (!e) return;
   if (e.agencyId) await requireScope("agency", e.agencyId, "exceptions");
-  else if (e.template) await requireScope("general", e.template.ownerUserId, "exceptions");
+  else if (e.template?.groupId) await requireScope("general", e.template.groupId, "exceptions");
   await prisma.scheduleException.delete({ where: { id: exceptionId } });
   revalidatePath("/panel", "layout");
 }

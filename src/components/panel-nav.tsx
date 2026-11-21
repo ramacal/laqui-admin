@@ -10,7 +10,26 @@ import { useState } from "react";
 import { SignOutButton } from "@/components/sign-out-button";
 
 export type NavLink = { href: string; label: string };
-export type NavGroup = { title: string | null; links: NavLink[] };
+export type NavGroup = {
+  title: string | null;
+  hint?: string; // one muted line under the title
+  placement?: "top" | "bottom"; // bottom: after the agency list
+  links: NavLink[];
+};
+
+function Group({ group, pathname }: { group: NavGroup; pathname: string }) {
+  return (
+    <div className={`nav-group ${group.placement === "bottom" ? "is-settings" : ""}`}>
+      {group.title && <span className="nav-title">{group.title}</span>}
+      {group.hint && <span className="nav-hint">{group.hint}</span>}
+      {group.links.map((l) => (
+        <Link key={l.href} href={l.href} className={`nav-link ${isActive(pathname, l.href) ? "is-active" : ""}`}>
+          {l.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
 export type NavAgency = {
   id: string;
   name: string;
@@ -27,6 +46,7 @@ const AGENCY_SECTIONS: NavLink[] = [
   { href: "/liquidaciones", label: "Liquidaciones" },
   { href: "/horario", label: "Horario" },
   { href: "/productos", label: "Productos" },
+  { href: "/personal", label: "Personal" },
 ];
 
 const isActive = (pathname: string, href: string) =>
@@ -66,6 +86,11 @@ export function PanelNav({
   const pathname = usePathname();
   // The drawer stays open only on the page where it was opened, so navigating closes it.
   const [openOn, setOpenOn] = useState<string | null>(null);
+  // With many agencies the list gets long: a filter by name (the current agency always shows).
+  const [filter, setFilter] = useState("");
+  const fold = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const needle = fold(filter.trim());
+  const showFilter = agencies.length > 5;
   const open = openOn === pathname;
   const setOpen = (next: boolean | ((o: boolean) => boolean)) =>
     setOpenOn((typeof next === "function" ? next(open) : next) ? pathname : null);
@@ -104,27 +129,29 @@ export function PanelNav({
           Laqui
         </Link>
         <div className="nav-scroll">
-          {groups.map((g, i) => (
-            <div key={g.title ?? i} className="nav-group">
-              {g.title && <span className="nav-title">{g.title}</span>}
-              {g.links.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className={`nav-link ${isActive(pathname, l.href) ? "is-active" : ""}`}
-                >
-                  {l.label}
-                </Link>
-              ))}
-            </div>
-          ))}
+          {groups
+            .filter((g) => g.placement !== "bottom")
+            .map((g, i) => (
+              <Group key={g.title ?? i} group={g} pathname={pathname} />
+            ))}
           {agencies.length > 0 && (
             <div className="nav-group">
-              <span className="nav-title">Agencias</span>
+              <span className="nav-title">Agencias ({agencies.length})</span>
+              {showFilter && (
+                <input
+                  type="search"
+                  className="nav-filter"
+                  placeholder="Buscar agencia…"
+                  aria-label="Buscar agencia"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                />
+              )}
               {agencies.map((a) => {
                 const base = `/panel/agencias/${a.id}`;
                 const inside =
                   pathname === base || pathname.startsWith(`${base}/`);
+                if (needle && !inside && !fold(a.name).includes(needle)) return null;
                 return (
                   <div key={a.id}>
                     <Link
@@ -157,8 +184,16 @@ export function PanelNav({
                   </div>
                 );
               })}
+              {needle && !agencies.some((a) => fold(a.name).includes(needle)) && (
+                <span className="muted small nav-empty">Ninguna coincide</span>
+              )}
             </div>
           )}
+          {groups
+            .filter((g) => g.placement === "bottom")
+            .map((g, i) => (
+              <Group key={g.title ?? i} group={g} pathname={pathname} />
+            ))}
         </div>
         <div className="nav-user">
           <div className="stack-xs">

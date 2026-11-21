@@ -7,7 +7,9 @@ import { redirect } from "next/navigation";
 import {
   agencyRole,
   canEditAgencyHours,
+  currentGroupId,
   getAccess,
+  ownsGroup,
   type Access,
 } from "@/lib/access";
 import {
@@ -20,7 +22,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { ImageError, webImage } from "@/lib/images";
 import { deleteFile, keys, putFile } from "@/lib/storage";
-import { agenciesOwnedBy, dateValue, todayIn } from "@/lib/schedule";
+import { agenciesOfGroup, dateValue, todayIn } from "@/lib/schedule";
 
 export type FormState = { ok: boolean; message: string } | null;
 const TZ = "America/Argentina/Buenos_Aires";
@@ -42,7 +44,7 @@ async function requireProductOwner(productId: string) {
   });
   if (
     !product ||
-    (!access.isPlatformAdmin && product.ownerUserId !== access.user.id)
+    !ownsGroup(access, product.groupId)
   )
     throw new Forbidden("No podés modificar este producto.");
   return { access, product };
@@ -246,11 +248,12 @@ export async function createOwnerProduct(
   const access = await getAccess();
   if (!access)
     return { ok: false, message: "Tu sesión expiró. Volvé a ingresar." };
-  const owned = await agenciesOwnedBy(access.user.id);
-  if (owned.length === 0)
+  const groupId = currentGroupId(access, String(form.get("groupId") ?? "") || null);
+  const owned = groupId ? await agenciesOfGroup(groupId) : [];
+  if (!groupId || owned.length === 0)
     return {
       ok: false,
-      message: "Solo los dueños de agencias cargan productos.",
+      message: "Solo los dueños de un grupo de agencias cargan productos.",
     };
 
   let productId: string;
@@ -276,7 +279,7 @@ export async function createOwnerProduct(
 
     const product = await prisma.ownerProduct.create({
       data: {
-        ownerUserId: access.user.id,
+        groupId,
         name,
         description: str(form, "description") || null,
         saleMode: str(form, "saleMode") === "MACHINE" ? "MACHINE" : "PHYSICAL",
@@ -355,7 +358,7 @@ export async function setOwnerProductAgencies(
   return guarded(async () => {
     const { product } = await requireProductOwner(productId);
     const allowed = new Set(
-      (await agenciesOwnedBy(product.ownerUserId)).map((a) => a.id),
+      (await agenciesOfGroup(product.groupId!)).map((a) => a.id),
     );
     const agencyIds = form
       .getAll("agencyId")

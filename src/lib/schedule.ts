@@ -344,45 +344,42 @@ export function parseWeek(json: unknown): Week {
 export const formatRanges = (ranges: Range[]) =>
   ranges.length ? ranges.map((r) => `${r.opensAt}–${r.closesAt}`).join(" y ") : "Cerrado";
 
-// ─── General schedule (one per owner) ──────────────────────────
+// ─── General schedule (one per group, spec agency-groups) ──────
 
-/** The owner's "Horario general"; created on first use. */
-export async function ensureGeneral(ownerUserId: string) {
+/** The group's "Horario general"; created on first use. */
+export async function ensureGeneral(groupId: string) {
   return prisma.scheduleTemplate.upsert({
-    where: { ownerUserId },
-    create: { ownerUserId },
+    where: { groupId },
+    create: { groupId },
     update: {},
   });
 }
 
-/** User id of the agency's active owner (null if the owner has not signed in yet). */
-export async function agencyOwnerUserId(agencyId: string) {
-  const owner = await prisma.agencyEmployee.findFirst({
-    where: { agencyId, role: "OWNER", active: true },
-    select: { userId: true },
-  });
-  return owner?.userId ?? null;
+/** Group that owns the agency (null only before the agency-groups migration). */
+export async function agencyGroupId(agencyId: string) {
+  const agency = await prisma.agency.findUnique({ where: { id: agencyId }, select: { groupId: true } });
+  return agency?.groupId ?? null;
 }
 
-/** Active agencies where the user is owner. */
-export function agenciesOwnedBy(userId: string) {
+/** Active agencies of a group. */
+export function agenciesOfGroup(groupId: string) {
   return prisma.agency.findMany({
-    where: { active: true, employees: { some: { userId, role: "OWNER", active: true } } },
+    where: { active: true, groupId },
     select: { id: true, name: true, scheduleTemplateId: true, customHours: true, _count: { select: { scheduleRules: true } } },
     orderBy: { name: "asc" },
   });
 }
 
-/** Link the owner's agencies to their general schedule. Agencies that already had their own
+/** Link the group's agencies to its general schedule. Agencies that already had their own
  *  hours keep them (personalized); the rest inherit the general weekly hours. */
-export async function linkUnscheduledAgencies(ownerUserId: string, templateId: string) {
-  const agencies = (await agenciesOwnedBy(ownerUserId)).filter((a) => !a.scheduleTemplateId);
+export async function linkUnscheduledAgencies(groupId: string, templateId: string) {
+  const agencies = (await agenciesOfGroup(groupId)).filter((a) => a.scheduleTemplateId !== templateId);
   for (const a of agencies)
     await prisma.agency.update({
       where: { id: a.id },
-      data: { scheduleTemplateId: templateId, customHours: a._count.scheduleRules > 0 },
+      data: { scheduleTemplateId: templateId, customHours: a.customHours || a._count.scheduleRules > 0 },
     });
-  return agencies.filter((a) => a._count.scheduleRules === 0).length;
+  return agencies.filter((a) => !a.customHours && a._count.scheduleRules === 0).length;
 }
 
 /** Text for an exception row. */

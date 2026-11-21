@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { requireAccess } from "@/lib/access";
+import { currentGroupId, requireAccess } from "@/lib/access";
 import { effectivePriceRows, priceOn } from "@/lib/catalog";
 import { prisma } from "@/lib/prisma";
-import { agenciesOwnedBy, todayIn } from "@/lib/schedule";
+import { agenciesOfGroup, todayIn } from "@/lib/schedule";
 import { SimpleForm } from "@/components/schedule/simple-form";
 import { money } from "@/components/products/price-parts";
 import { createOwnerProduct, setAgencyGameVisible } from "./actions";
@@ -10,14 +10,15 @@ import { createOwnerProduct, setAgencyGameVisible } from "./actions";
 export const metadata = { title: "Productos · Laqui" };
 const TZ = "America/Argentina/Buenos_Aires";
 
-// Owner's products: official games (choose where they are shown) and own products
-// (one list per owner, offered in chosen agencies). Specs: global-game-catalog, owner-products.
-export default async function OwnerProductsPage() {
+// The group's products: official games (choose where they are shown) and own products
+// (one list per group, offered in chosen agencies). Specs: global-game-catalog, owner-products, agency-groups.
+export default async function OwnerProductsPage({ searchParams }: { searchParams: Promise<{ group?: string }> }) {
   const access = await requireAccess();
   const today = todayIn(TZ);
-  const agencies = await agenciesOwnedBy(access.user.id);
+  const groupId = currentGroupId(access, (await searchParams).group);
+  const agencies = groupId ? await agenciesOfGroup(groupId) : [];
   const products = await prisma.ownerProduct.findMany({
-    where: { ownerUserId: access.user.id },
+    where: { groupId: groupId ?? "-" },
     include: { prices: true, agencies: { include: { agency: { select: { name: true } } } } },
     orderBy: [{ active: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
   });
@@ -47,7 +48,7 @@ export default async function OwnerProductsPage() {
       </div>
 
       {agencies.length === 0 ? (
-        <p className="card muted">Los productos propios son para dueños de agencias. Tu usuario no es dueño de ninguna.</p>
+        <p className="card muted">Los productos son para los dueños de un grupo de agencias.</p>
       ) : (
         <>
           <section className="stack-sm">
@@ -139,6 +140,7 @@ export default async function OwnerProductsPage() {
           <section className="card stack-sm">
             <h2>Nuevo producto</h2>
             <SimpleForm action={createOwnerProduct} submitLabel="Crear producto">
+              <input type="hidden" name="groupId" value={groupId ?? ""} />
               <label className="field">
                 <span className="small muted">Nombre</span>
                 <input name="name" className="input" placeholder="Rifa de fin de año" required maxLength={120} />

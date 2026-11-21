@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { requireAccess } from "@/lib/access";
+import { currentGroupId, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { agenciesOwnedBy, getWeek, todayIn, upcomingExceptions, upcomingHolidays, type Week } from "@/lib/schedule";
+import { agenciesOfGroup, getWeek, todayIn, upcomingExceptions, upcomingHolidays, type Week } from "@/lib/schedule";
 import { WeeklyHoursEditor } from "@/components/schedule/weekly-hours-editor";
 import { ExceptionForm } from "@/components/schedule/exception-form";
 import { ExceptionsList, HolidaysList } from "@/components/schedule/schedule-lists";
@@ -11,28 +11,28 @@ export const metadata = { title: "Horario general · Laqui" };
 const TZ = "America/Argentina/Buenos_Aires";
 const EMPTY_WEEK: Week = [[], [], [], [], [], [], []];
 
-// One "Horario general" per owner (spec agency-schedule). Platform admins can open
-// another owner's with ?owner=<userId>.
-export default async function GeneralSchedulePage({ searchParams }: { searchParams: Promise<{ owner?: string }> }) {
+// One "Horario general" per group (spec agency-groups). Owners of several groups, and platform
+// admins, open another group's with ?group=<groupId>.
+export default async function GeneralSchedulePage({ searchParams }: { searchParams: Promise<{ group?: string }> }) {
   const access = await requireAccess();
-  const { owner } = await searchParams;
-  const ownerUserId = access.isPlatformAdmin && owner ? owner : access.user.id;
-  const agencies = await agenciesOwnedBy(ownerUserId);
+  const { group } = await searchParams;
+  const groupId = currentGroupId(access, group);
+  const agencies = groupId ? await agenciesOfGroup(groupId) : [];
 
-  if (agencies.length === 0) {
+  if (!groupId || agencies.length === 0) {
     return (
       <main className="screen">
         <Link href="/panel" className="back">
           ← Panel
         </Link>
         <h1>Horario general</h1>
-        <p className="card muted">El horario general es para dueños de agencias. Este usuario no es dueño de ninguna.</p>
+        <p className="card muted">El horario general es para los dueños de un grupo de agencias.</p>
       </main>
     );
   }
 
   const today = todayIn(TZ);
-  const general = await prisma.scheduleTemplate.findUnique({ where: { ownerUserId } });
+  const general = await prisma.scheduleTemplate.findUnique({ where: { groupId } });
   const scope = general ? { templateId: general.id } : null;
   const [week, exceptions, holidays] = await Promise.all([
     scope ? getWeek(scope) : Promise.resolve(EMPTY_WEEK),
@@ -55,7 +55,7 @@ export default async function GeneralSchedulePage({ searchParams }: { searchPara
 
       <section className="stack-sm">
         <h2>Horario semanal</h2>
-        <WeeklyHoursEditor initial={week} action={saveGeneralWeek.bind(null, ownerUserId)} />
+        <WeeklyHoursEditor initial={week} action={saveGeneralWeek.bind(null, groupId)} />
       </section>
 
       <section className="card stack-sm">
@@ -84,7 +84,7 @@ export default async function GeneralSchedulePage({ searchParams }: { searchPara
         <details>
           <summary>Agregar excepción</summary>
           <div className="spaced">
-            <ExceptionForm action={addException.bind(null, "general", ownerUserId)} today={today} />
+            <ExceptionForm action={addException.bind(null, "general", groupId)} today={today} />
           </div>
         </details>
       </section>
@@ -92,7 +92,7 @@ export default async function GeneralSchedulePage({ searchParams }: { searchPara
       <section className="card stack-sm">
         <h2>Próximos feriados</h2>
         <p className="muted small">Los feriados no cierran solos: elegí en cuáles cierran tus agencias.</p>
-        <HolidaysList items={holidays} scope={{ kind: "general", id: ownerUserId }} canEdit />
+        <HolidaysList items={holidays} scope={{ kind: "general", id: groupId }} canEdit />
       </section>
     </main>
   );

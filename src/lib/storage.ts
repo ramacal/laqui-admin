@@ -12,7 +12,7 @@
 //   agencias/{provincia}/{legajo}/finanzas/liquidaciones/{yyyy}/{mm}/{fecha}-{id}.{ext} private
 //   agencias/{provincia}/{legajo}/finanzas/movimientos/{yyyy}/{mm}/{id}.{ext}           private
 // Owner (shared by the owner's agencies):
-//   duenos/{ownerUserId}/productos/{productId}/imagen-{v}.webp                         public
+//   grupos/{group-slug}/productos/{productId}/imagen-{v}.webp                         public
 // Platform:
 //   juegos/{juego}/imagen-{v}.webp, loterias/{loteria}/logo-{v}.png,
 //   quiniela/significados/{nn}-{v}.{ext}                                               public
@@ -102,8 +102,8 @@ export const keys = {
   movementAttachment: (agency: AgencyRef, movementId: string, ext: string, at = new Date()) =>
     inAgency(agency, `finanzas/movimientos/${yearMonth(at)}/${movementId}.${extPart(ext)}`),
   // Picture of an owner product (public), shared by every agency that offers it.
-  ownerProductImage: (ownerUserId: string, productId: string, version = Date.now()) =>
-    `duenos/${ownerUserId}/productos/${productId}/imagen-${version}.webp`,
+  ownerProductImage: (groupSlug: string, productId: string, version = Date.now()) =>
+    `grupos/${groupSlug}/productos/${productId}/imagen-${version}.webp`,
   // Picture of an official game (public).
   gameImage: (gameCode: string, version = Date.now()) =>
     `juegos/${slugPart(gameCode)}/imagen-${version}.webp`,

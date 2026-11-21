@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { agencyRole, canEditAgencyExceptions, canEditAgencyHours, requireAccess } from "@/lib/access";
+import { agencyRole, canEditAgencyExceptions, canEditAgencyHours, ownsGroup, requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import {
   WEEKDAYS_UI,
@@ -51,7 +51,7 @@ export default async function AgencySchedulePage({
       name: true,
       timezone: true,
       customHours: true,
-      scheduleTemplate: { select: { id: true, ownerUserId: true } },
+      scheduleTemplate: { select: { id: true, groupId: true } },
     },
   });
   if (!agency) notFound();
@@ -80,8 +80,8 @@ export default async function AgencySchedulePage({
       .map((g) => g.id),
   );
   const generalLink =
-    general && (access.isPlatformAdmin || general.ownerUserId === access.user.id)
-      ? `/panel/horarios${general.ownerUserId === access.user.id ? "" : `?owner=${general.ownerUserId}`}`
+    general?.groupId && ownsGroup(access, general.groupId)
+      ? `/panel/horarios${access.groups[0]?.id === general.groupId ? "" : `?group=${general.groupId}`}`
       : null;
 
   return (

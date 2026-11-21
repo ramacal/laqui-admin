@@ -193,10 +193,10 @@ export async function agencyBalances(agencyId: string, date?: string) {
   return { date: upTo.toISOString().slice(0, 10), funds: rows, total };
 }
 
-/** Owner view: total per agency they own (all payment methods). */
-export async function ownerFinanceTotals(userId: string, date?: string) {
+/** Group view: total per agency of the group (all payment methods). */
+export async function groupFinanceTotals(groupId: string, date?: string) {
   const agencies = await prisma.agency.findMany({
-    where: { active: true, employees: { some: { userId, role: "OWNER", active: true } } },
+    where: { active: true, groupId },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
